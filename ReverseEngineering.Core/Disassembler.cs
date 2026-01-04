@@ -199,7 +199,34 @@ namespace ReverseEngineering.Core
 
             return result;
         }
+        public static Instruction DecodeSingleInstruction(byte[] bytes, int offset, ulong address, bool is64Bit)
+        {
+            var reader = new ByteArrayCodeReader(bytes)
+            {
+                Position = offset
+            };
 
+            var decoder = Iced.Intel.Decoder.Create(is64Bit ? 64 : 32, reader);
+            decoder.IP = address;
+
+            var icedIns = decoder.Decode();
+
+            return new Instruction
+            {
+                Address = address,
+                FileOffset = offset,
+                Length = icedIns.Length,
+                Bytes = bytes.AsSpan(offset, icedIns.Length).ToArray(),
+                Raw = icedIns,
+                Mnemonic = icedIns.Mnemonic.ToString(),
+                Operands = icedIns.Op0Kind.ToString(), // you can format this better
+                IsCall = icedIns.FlowControl == FlowControl.Call,
+                IsJump = icedIns.FlowControl == FlowControl.UnconditionalBranch,
+                IsConditionalJump = icedIns.FlowControl == FlowControl.ConditionalBranch,
+                IsReturn = icedIns.FlowControl == FlowControl.Return,
+                IsNop = icedIns.Mnemonic == Mnemonic.Nop
+            };
+        }
         // ---------------------------------------------------------
         //  INTERNAL SECTION STRUCT
         // ---------------------------------------------------------

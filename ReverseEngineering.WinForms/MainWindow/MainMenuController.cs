@@ -1,6 +1,8 @@
 ﻿using System;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using ReverseEngineering.Core;
 using ReverseEngineering.Core.ProjectSystem;
@@ -18,6 +20,9 @@ namespace ReverseEngineering.WinForms.MainWindow
         private readonly CoreEngine _core;
 
         private readonly DisassemblyController _disasmController;
+
+        private CancellationTokenSource? _hexToAsmCts;
+        private bool _suppressEvents;
 
         public MainMenuController(
             Form form,
@@ -37,6 +42,9 @@ namespace ReverseEngineering.WinForms.MainWindow
             _disasmController = disasmController;
 
             BuildMenu();
+
+            // ⭐ CRITICAL: async HEX → ASM sync
+            _hex.ByteChanged += OnHexByteChanged;
         }
 
         private void BuildMenu()
@@ -50,6 +58,34 @@ namespace ReverseEngineering.WinForms.MainWindow
             file.DropDownItems.Add(new ToolStripMenuItem("Exit", null, (s, e) => _form.Close()));
 
             _menu.Items.Add(file);
+        }
+        
+        // ---------------------------------------------------------
+        //  HEX → ASM SYNC (async)
+        // ---------------------------------------------------------
+        private async void OnHexByteChanged(int offset, byte oldValue, byte newValue)
+        {
+            if (_suppressEvents)
+                return;
+
+            _hexToAsmCts?.Cancel();
+            _hexToAsmCts = new CancellationTokenSource();
+            var token = _hexToAsmCts.Token;
+
+            try
+            {
+                await Task.Delay(80, token);
+
+                await Task.Run(() => _core.RebuildInstructionAtOffset(offset), token);
+
+                _suppressEvents = true;
+                _disasmController.Load(_core);
+                _suppressEvents = false;
+            }
+            catch (TaskCanceledException)
+            {
+                // ignored
+            }
         }
 
         // ---------------------------------------------------------
@@ -97,8 +133,10 @@ namespace ReverseEngineering.WinForms.MainWindow
 
             _core.LoadFile(ofd.FileName);
 
+            _suppressEvents = true;
             _hex.SetBuffer(_core.HexBuffer);
             _disasmController.Load(_core);
+            _suppressEvents = false;
 
             _log.Append($"Loaded binary: {ofd.FileName}");
             _statusFile.Text = Path.GetFileName(ofd.FileName);

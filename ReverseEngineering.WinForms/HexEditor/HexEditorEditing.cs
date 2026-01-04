@@ -4,16 +4,11 @@ using ReverseEngineering.Core;
 
 namespace ReverseEngineering.WinForms.HexEditor
 {
-    public class HexEditorEditing
+    public class HexEditorEditing(HexEditorState state, HexEditorSelection selection, HexEditorControl own)
     {
-        private readonly HexEditorState _s;
-        private readonly HexEditorSelection _sel;
-
-        public HexEditorEditing(HexEditorState state, HexEditorSelection selection)
-        {
-            _s = state;
-            _sel = selection;
-        }
+        private readonly HexEditorState _s = state;
+        private readonly HexEditorSelection _sel = selection;
+        private readonly HexEditorControl _own = own;
 
         // ---------------------------------------------------------
         //  BYTE WRITING

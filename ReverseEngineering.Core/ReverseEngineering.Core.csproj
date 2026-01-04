@@ -11,4 +11,17 @@
     <PackageReference Include="Iced" Version="1.21.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Reference Include="Keystone.Net">
+      <HintPath>Keystone.Net.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Keystone.Net.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

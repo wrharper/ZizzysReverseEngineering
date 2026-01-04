@@ -2,6 +2,7 @@
 using System.Drawing;
 using System.Windows.Forms;
 using ReverseEngineering.Core;
+using ReverseEngineering.WinForms.HexEditor;
 
 namespace ReverseEngineering.WinForms.HexEditor
 {
@@ -18,7 +19,11 @@ namespace ReverseEngineering.WinForms.HexEditor
         private bool _dragging;
 
         public event EventHandler<HexSelectionChangedEventArgs>? SelectionChanged;
+
+        // Raised when any bytes change (bulk notification)
         public event EventHandler? BytesChanged;
+
+        // Raised when a single byte changes: offset, oldValue, newValue
         public event Action<int, byte, byte>? ByteChanged;
 
         public HexEditorControl()
@@ -29,7 +34,7 @@ namespace ReverseEngineering.WinForms.HexEditor
             // Core modules
             _state = new HexEditorState();
             _selection = new HexEditorSelection(_state);
-            _editing = new HexEditorEditing(_state, _selection);
+            _editing = new HexEditorEditing(_state, _selection, this);
             _interaction = new HexEditorInteraction(_state, _selection, _editing, this);
             _renderer = new HexEditorRenderer(_state, _selection, this);
 
@@ -88,13 +93,12 @@ namespace ReverseEngineering.WinForms.HexEditor
 
             RaiseSelectionChanged();
         }
+
         protected override void OnMouseWheel(MouseEventArgs e)
         {
             base.OnMouseWheel(e);
 
-            // How many rows to scroll per wheel tick
-            int rowsPerTick = 8; // tweak this number to taste
-
+            int rowsPerTick = 8;
             int deltaRows = e.Delta > 0 ? -rowsPerTick : rowsPerTick;
             int deltaPixels = deltaRows * _state.LineHeight;
 
@@ -108,9 +112,7 @@ namespace ReverseEngineering.WinForms.HexEditor
 
             Invalidate();
         }
-        // ---------------------------------------------------------
-        //  BUFFER SETUP
-        // ---------------------------------------------------------
+
         public void SetBuffer(HexBuffer buffer)
         {
             _state.Buffer = buffer;
@@ -165,17 +167,11 @@ namespace ReverseEngineering.WinForms.HexEditor
             _renderer.Paint(e.Graphics, ClientRectangle);
         }
 
-        // ---------------------------------------------------------
-        //  PUBLIC ACCESSORS
-        // ---------------------------------------------------------
         public HexBuffer? Buffer => _state.Buffer;
 
         public string CurrentFilePath =>
             _state.Buffer?.FilePath ?? string.Empty;
 
-        // ---------------------------------------------------------
-        //  EVENTS
-        // ---------------------------------------------------------
         internal void RaiseSelectionChanged()
         {
             int length = _selection.GetSelectionLength();
@@ -191,18 +187,12 @@ namespace ReverseEngineering.WinForms.HexEditor
             BytesChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        // ---------------------------------------------------------
-        //  SELECTION API
-        // ---------------------------------------------------------
         public void SetSelection(int start, int end)
         {
             _selection.SetSelection(start, end);
             Invalidate();
         }
 
-        // ---------------------------------------------------------
-        //  COPY OPERATIONS
-        // ---------------------------------------------------------
         public void CopyOffset()
         {
             if (_state.CaretIndex >= 0)
@@ -229,9 +219,7 @@ namespace ReverseEngineering.WinForms.HexEditor
             if (text != null)
                 Clipboard.SetText(text);
         }
-        // ---------------------------------------------------------
-        //  VIEW STATE API (used by ProjectSystem)
-        // ---------------------------------------------------------
+
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public int VerticalScrollOffset
         {
@@ -246,6 +234,7 @@ namespace ReverseEngineering.WinForms.HexEditor
                 Invalidate();
             }
         }
+
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public int CaretIndex
         {
@@ -256,6 +245,7 @@ namespace ReverseEngineering.WinForms.HexEditor
                 Invalidate();
             }
         }
+
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public int SelectionStart
         {
@@ -266,6 +256,7 @@ namespace ReverseEngineering.WinForms.HexEditor
                 Invalidate();
             }
         }
+
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public int SelectionEnd
         {
@@ -277,9 +268,6 @@ namespace ReverseEngineering.WinForms.HexEditor
             }
         }
 
-        // ---------------------------------------------------------
-        //  GET / SET VIEW STATE (ProjectSystem integration)
-        // ---------------------------------------------------------
         public ReverseEngineering.Core.ProjectSystem.HexViewState GetViewState()
         {
             return new ReverseEngineering.Core.ProjectSystem.HexViewState
@@ -301,7 +289,6 @@ namespace ReverseEngineering.WinForms.HexEditor
             _state.SelectionStart = state.SelectionStart;
             _state.SelectionEnd = state.SelectionEnd;
 
-            // Sync scrollbar
             _scroll.Value = Math.Max(
                 _scroll.Minimum,
                 Math.Min(_scroll.Maximum - _scroll.LargeChange, state.ScrollOffset)
@@ -309,18 +296,21 @@ namespace ReverseEngineering.WinForms.HexEditor
 
             Invalidate();
         }
-        // ---------------------------------------------------------
-        //  BYTE EDIT COMMIT (external callers)
-        // ---------------------------------------------------------
+
         internal void CommitByteEdit(int offset, byte oldValue, byte newValue)
         {
             if (oldValue == newValue)
                 return;
 
             _editing.WriteByte(offset, newValue);
+
+            // This is the async trigger point: controllers listen to this
             ByteChanged?.Invoke(offset, oldValue, newValue);
+
+            RaiseBytesChanged();
             Invalidate();
         }
+
         public void ScrollTo(int offset)
         {
             int row = offset / HexEditorState.BytesPerRow;

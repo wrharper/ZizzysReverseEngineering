@@ -40,7 +40,10 @@ namespace ReverseEngineering.Core
         // ---------------------------------------------------------
 
         public int Length { get; set; }
-        public byte[] Bytes { get; set; } = System.Array.Empty<byte>();
+        public byte[] Bytes { get; set; } = [];
+
+        // ⭐ NEW: Required for incremental disassembly
+        public ulong EndAddress => Address + (ulong)Length;
 
         // ---------------------------------------------------------
         //  RAW ICED INSTRUCTION
