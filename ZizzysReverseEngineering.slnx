@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="ReverseEngineering.Core/ReverseEngineering.Core.csproj" />
+  <Project Path="ReverseEngineering.WinForms/ReverseEngineering.WinForms.csproj" />
+</Solution>
