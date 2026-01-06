@@ -1,5 +1,6 @@
 ﻿using ReverseEngineering.Core;
 using ReverseEngineering.Core.IcedAssembly;
+using ReverseEngineering.Core.Keystone;
 using ReverseEngineering.Core.ProjectSystem;
 using ReverseEngineering.WinForms.HexEditor;
 
@@ -68,8 +69,7 @@ namespace ReverseEngineering.WinForms.MainWindow
                 var ins = _instructions[index];
                 ulong address = ins.Address;
 
-                var asm = AsmParser.FromText(text, _core.Is64Bit, address);
-                byte[] bytes = await Task.Run(() => AsmAssembler.Encode(asm, address), token);
+                byte[] bytes = await Task.Run(() => KeystoneAssembler.Assemble(text, address, _core.Is64Bit), token);
                 if (bytes == null || bytes.Length == 0)
                     return;
 
