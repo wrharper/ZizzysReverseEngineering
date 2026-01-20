@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using Iced.Intel;
 using Keystone.Net;
+using ReverseEngineering.Core.Keystone;
 
 namespace ReverseEngineering.Core.Compatibility
 {
@@ -216,7 +217,9 @@ namespace ReverseEngineering.Core.Compatibility
                 var instr = new Iced.Intel.Instruction();
                 decoder.Decode(out instr);
                 var formatter = new IntelFormatter();
-                var mnemonic = formatter.Format(instr);
+                var output = new StringOutput();
+                formatter.Format(instr, output);
+                var mnemonic = output.ToStringAndReset();
 
                 // 2. Re-assemble with Keystone
                 var reassembled = KeystoneAssembler.Assemble(mnemonic, 0x401000, is64Bit: true);

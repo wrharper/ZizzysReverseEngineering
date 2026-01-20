@@ -106,7 +106,7 @@ namespace ReverseEngineering.WinForms.Search
             };
 
             mainPanel.Controls.Add(resultsGrid, 0, 2);
-            mainPanel.SetRowStyle(2, new RowStyle(SizeType.Percent, 100));
+            mainPanel.RowStyles[2] = new RowStyle(SizeType.Percent, 100);
 
             // Row 3: Close button
             var closeBtn = new Button { Text = "Close", Dock = DockStyle.Right, Width = 100 };

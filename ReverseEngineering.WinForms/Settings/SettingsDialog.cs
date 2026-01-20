@@ -161,7 +161,16 @@ namespace ReverseEngineering.WinForms.Settings
 
             // Port
             AddLabel(panel, "Port:", 10, y);
-            _lmPortNumeric = new NumericUpDown { Value = _settings.LMStudio.Port, Minimum = 1, Maximum = 65535, Width = 100, Location = new Point(150, y), BackColor = Color.FromArgb(60, 60, 60), ForeColor = Color.White };
+            _lmPortNumeric = new NumericUpDown 
+            { 
+                Minimum = 1,
+                Maximum = 65535,
+                Value = Math.Min(_settings.LMStudio.Port, 65535),
+                Width = 100, 
+                Location = new Point(150, y), 
+                BackColor = Color.FromArgb(60, 60, 60), 
+                ForeColor = Color.White 
+            };
             panel.Controls.Add(_lmPortNumeric);
             y += 30;
 
@@ -182,13 +191,31 @@ namespace ReverseEngineering.WinForms.Settings
 
             // Max Tokens
             AddLabel(panel, "Max Tokens:", 10, y);
-            _lmMaxTokensNumeric = new NumericUpDown { Value = _settings.LMStudio.MaxTokens, Minimum = 1, Maximum = 32768, Width = 100, Location = new Point(150, y), BackColor = Color.FromArgb(60, 60, 60), ForeColor = Color.White };
+            _lmMaxTokensNumeric = new NumericUpDown 
+            { 
+                Minimum = 1,
+                Maximum = 32768,
+                Value = Math.Min(_settings.LMStudio.MaxTokens, 32768),
+                Width = 100, 
+                Location = new Point(150, y), 
+                BackColor = Color.FromArgb(60, 60, 60), 
+                ForeColor = Color.White 
+            };
             panel.Controls.Add(_lmMaxTokensNumeric);
             y += 30;
 
             // Timeout
             AddLabel(panel, "Request Timeout (seconds):", 10, y);
-            _lmTimeoutNumeric = new NumericUpDown { Value = _settings.LMStudio.RequestTimeoutSeconds, Minimum = 10, Maximum = 1800, Width = 100, Location = new Point(150, y), BackColor = Color.FromArgb(60, 60, 60), ForeColor = Color.White };
+            _lmTimeoutNumeric = new NumericUpDown 
+            { 
+                Minimum = 10,
+                Maximum = 1800,
+                Value = Math.Clamp(_settings.LMStudio.RequestTimeoutSeconds, 10, 1800),
+                Width = 100, 
+                Location = new Point(150, y), 
+                BackColor = Color.FromArgb(60, 60, 60), 
+                ForeColor = Color.White 
+            };
             panel.Controls.Add(_lmTimeoutNumeric);
             y += 30;
 
@@ -232,7 +259,16 @@ namespace ReverseEngineering.WinForms.Settings
 
             y += 10;
             AddLabel(panel, "Max Function Size:", 10, y);
-            _maxFunctionSizeNumeric = new NumericUpDown { Value = _settings.Analysis.MaxFunctionSize, Minimum = 100, Maximum = 100000, Width = 150, Location = new Point(150, y), BackColor = Color.FromArgb(60, 60, 60), ForeColor = Color.White };
+            _maxFunctionSizeNumeric = new NumericUpDown 
+            { 
+                Minimum = 100,
+                Maximum = 100000,
+                Value = Math.Clamp(_settings.Analysis.MaxFunctionSize, 100, 100000),
+                Width = 150, 
+                Location = new Point(150, y), 
+                BackColor = Color.FromArgb(60, 60, 60), 
+                ForeColor = Color.White 
+            };
             panel.Controls.Add(_maxFunctionSizeNumeric);
 
             return tab;
@@ -252,8 +288,9 @@ namespace ReverseEngineering.WinForms.Settings
             // Theme
             AddLabel(panel, "Theme:", 10, y);
             _themeComboBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200, Location = new Point(150, y), BackColor = Color.FromArgb(60, 60, 60), ForeColor = Color.White };
-            _themeComboBox.Items.AddRange(new[] { "Dark", "Light", "HighContrast" });
-            _themeComboBox.SelectedItem = _settings.UI.Theme;
+            _themeComboBox.Items.AddRange(new[] { "Dark", "Light", "Midnight", "HackerGreen" });
+            _themeComboBox.SelectedItem = _settings.UI.Theme ?? "Dark";
+            _themeComboBox.SelectedIndexChanged += ThemeComboBox_SelectedIndexChanged;
             panel.Controls.Add(_themeComboBox);
             y += 30;
 
@@ -267,7 +304,16 @@ namespace ReverseEngineering.WinForms.Settings
             y += 30;
 
             AddLabel(panel, "Font Size:", 10, y);
-            _fontSizeNumeric = new NumericUpDown { Value = _settings.UI.FontSize, Minimum = 8, Maximum = 24, Width = 80, Location = new Point(150, y), BackColor = Color.FromArgb(60, 60, 60), ForeColor = Color.White };
+            _fontSizeNumeric = new NumericUpDown 
+            { 
+                Minimum = 8,
+                Maximum = 24,
+                Value = Math.Clamp(_settings.UI.FontSize, 8, 24),
+                Width = 80, 
+                Location = new Point(150, y), 
+                BackColor = Color.FromArgb(60, 60, 60), 
+                ForeColor = Color.White 
+            };
             panel.Controls.Add(_fontSizeNumeric);
             y += 30;
 
@@ -275,7 +321,16 @@ namespace ReverseEngineering.WinForms.Settings
             _hexUppercaseCheckBox = AddCheckBox(panel, "Hex view: uppercase", 10, ref y, _settings.UI.HexViewUppercase);
 
             AddLabel(panel, "Hex bytes per row:", 10, y);
-            _hexBytesPerRowNumeric = new NumericUpDown { Value = _settings.UI.HexBytesPerRow, Minimum = 4, Maximum = 64, Width = 80, Location = new Point(150, y), BackColor = Color.FromArgb(60, 60, 60), ForeColor = Color.White };
+            _hexBytesPerRowNumeric = new NumericUpDown 
+            { 
+                Minimum = 4,
+                Maximum = 64,
+                Value = Math.Clamp(_settings.UI.HexBytesPerRow, 4, 64),
+                Width = 80, 
+                Location = new Point(150, y), 
+                BackColor = Color.FromArgb(60, 60, 60), 
+                ForeColor = Color.White 
+            };
             panel.Controls.Add(_hexBytesPerRowNumeric);
             y += 30;
 
@@ -298,10 +353,50 @@ namespace ReverseEngineering.WinForms.Settings
             _detailedLoggingCheckBox = AddCheckBox(panel, "Enable detailed logging", 10, ref y, _settings.EnableDetailedLogging);
 
             AddLabel(panel, "Log retention (days):", 10, y);
-            _logRetentionNumeric = new NumericUpDown { Value = _settings.LogRetentionDays, Minimum = 1, Maximum = 365, Width = 80, Location = new Point(150, y), BackColor = Color.FromArgb(60, 60, 60), ForeColor = Color.White };
+            _logRetentionNumeric = new NumericUpDown 
+            { 
+                Minimum = 1,
+                Maximum = 365,
+                Value = Math.Clamp(_settings.LogRetentionDays, 1, 365),
+                Width = 80, 
+                Location = new Point(150, y), 
+                BackColor = Color.FromArgb(60, 60, 60), 
+                ForeColor = Color.White 
+            };
             panel.Controls.Add(_logRetentionNumeric);
 
             return tab;
+        }
+
+        // ---------------------------------------------------------
+        //  RESPONSIVE LAYOUT HELPERS
+        // ---------------------------------------------------------
+        /// <summary>
+        /// Adds a label-control pair with responsive layout.
+        /// Labels are anchored left, controls are anchored left+right for responsiveness.
+        /// </summary>
+        private int AddLabeledControl(Panel panel, string labelText, Control control, int y, int controlWidth = 150)
+        {
+            const int labelX = 10;
+            const int controlX = 150;
+            const int rowHeight = 30;
+
+            var label = new Label 
+            { 
+                Text = labelText, 
+                Location = new Point(labelX, y + 2), 
+                AutoSize = true, 
+                ForeColor = Color.FromArgb(200, 200, 200),
+                Anchor = AnchorStyles.Left | AnchorStyles.Top
+            };
+            panel.Controls.Add(label);
+
+            control.Location = new Point(controlX, y);
+            control.Width = controlWidth;
+            control.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right;
+            panel.Controls.Add(control);
+
+            return y + rowHeight;
         }
 
         // ---------------------------------------------------------
@@ -364,6 +459,22 @@ namespace ReverseEngineering.WinForms.Settings
         {
             string url = $"http://{_lmHostTextBox.Text}:{_lmPortNumeric.Value}";
             MessageBox.Show($"Would test connection to: {url}\n\n(Feature: Call LocalLLMClient.IsHealthyAsync())", "Test Connection", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void ThemeComboBox_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            var selectedTheme = _themeComboBox.SelectedItem?.ToString() ?? "Dark";
+            var theme = selectedTheme switch
+            {
+                "Dark" => Themes.Dark,
+                "Light" => Themes.Light,
+                "Midnight" => Themes.Midnight,
+                "HackerGreen" => Themes.HackerGreen,
+                _ => Themes.Dark
+            };
+            
+            // Apply theme immediately to preview in dialog
+            ThemeManager.ApplyTheme(this, theme);
         }
     }
 }

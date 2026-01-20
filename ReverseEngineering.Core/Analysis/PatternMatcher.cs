@@ -39,17 +39,21 @@ namespace ReverseEngineering.Core.Analysis
         public static List<PatternMatch> FindBytePattern(byte[] buffer, string pattern, string? description = null)
         {
             var matches = new List<PatternMatch>();
-            var patternBytes = ParseBytePattern(pattern);
+            var patternBytesOpt = ParseBytePattern(pattern);
 
-            if (patternBytes == null || patternBytes.Length == 0)
+            if (!patternBytesOpt.HasValue)
                 return matches;
 
-            for (int i = 0; i <= buffer.Length - patternBytes.Length; i++)
+            var patternBytes = patternBytesOpt.Value;
+            if (patternBytes.Item1.Length == 0)
+                return matches;
+
+            for (int i = 0; i <= buffer.Length - patternBytes.Item1.Length; i++)
             {
                 if (MatchesPattern(buffer, i, patternBytes))
                 {
-                    var matched = new byte[patternBytes.Length];
-                    Array.Copy(buffer, i, matched, 0, patternBytes.Length);
+                    var matched = new byte[patternBytes.Item1.Length];
+                    Array.Copy(buffer, i, matched, 0, patternBytes.Item1.Length);
 
                     matches.Add(new PatternMatch
                     {

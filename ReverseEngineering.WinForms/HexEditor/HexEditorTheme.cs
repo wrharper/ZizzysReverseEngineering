@@ -19,15 +19,15 @@ namespace ReverseEngineering.WinForms.HexEditor
 
         public static Color ModifiedBack { get; private set; }
 
-        public static Brush BgBrush { get; private set; }
-        public static Brush FgBrush { get; private set; }
-        public static Brush AsciiBrush { get; private set; }
-        public static Brush OffsetBrush { get; private set; }
-        public static Brush SelectionBackBrush { get; private set; }
-        public static Brush SelectionForeBrush { get; private set; }
-        public static Brush ModifiedBackBrush { get; private set; }
+        public static Brush? BgBrush { get; private set; }
+        public static Brush? FgBrush { get; private set; }
+        public static Brush? AsciiBrush { get; private set; }
+        public static Brush? OffsetBrush { get; private set; }
+        public static Brush? SelectionBackBrush { get; private set; }
+        public static Brush? SelectionForeBrush { get; private set; }
+        public static Brush? ModifiedBackBrush { get; private set; }
 
-        public static Pen SeparatorPen { get; private set; }
+        public static Pen? SeparatorPen { get; private set; }
 
         public static void Apply(AppTheme theme)
         {

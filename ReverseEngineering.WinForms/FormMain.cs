@@ -3,6 +3,8 @@ using ReverseEngineering.Core.LLM;
 using ReverseEngineering.WinForms.HexEditor;
 using ReverseEngineering.WinForms.MainWindow;
 using ReverseEngineering.WinForms.LLM;
+using ReverseEngineering.WinForms.SymbolView;
+using ReverseEngineering.WinForms.GraphView;
 using System;
 using System.Windows.Forms;
 
@@ -21,6 +23,17 @@ namespace ReverseEngineering.WinForms
         public FormMain()
         {
             InitializeComponent();
+
+            // ---------------------------------------------------------
+            //  INITIALIZE CONTROLS THAT REQUIRE CoreEngine
+            // ---------------------------------------------------------
+            symbolTree = new SymbolTreeControl(_core);
+            graphControl = new GraphControl(_core);
+
+            // ---------------------------------------------------------
+            //  COMPOSE LAYOUT (after controls are initialized)
+            // ---------------------------------------------------------
+            ComposeLayout();
 
             // ---------------------------------------------------------
             //  LLM CLIENT (Optional, for LM Studio integration)
@@ -70,6 +83,44 @@ namespace ReverseEngineering.WinForms
             //  DEFAULT THEME
             // ---------------------------------------------------------
             ThemeManager.ApplyTheme(this, Themes.Dark);
+        }
+
+        // ---------------------------------------------------------
+        //  LAYOUT COMPOSITION
+        // ---------------------------------------------------------
+        private void ComposeLayout()
+        {
+            // Configure controls now that they're initialized
+            symbolTree.Dock = DockStyle.Fill;
+            symbolTree.Text = "Symbols & Functions";
+
+            graphControl.Dock = DockStyle.Fill;
+            graphControl.Text = "Control Flow Graph";
+
+            logControl.Dock = DockStyle.Fill;
+
+            // Compose right side top: SymbolTree and GraphControl in tabs
+            var tabsTop = new TabControl { Dock = DockStyle.Fill };
+            tabsTop.TabPages.Add(new TabPage("Symbols") { Controls = { symbolTree } });
+            tabsTop.TabPages.Add(new TabPage("CFG") { Controls = { graphControl } });
+            splitRight.Panel1.Controls.Add(tabsTop);
+
+            // Compose right side bottom: LLMPane and LogControl in tabs
+            var tabsBottom = new TabControl { Dock = DockStyle.Fill };
+            tabsBottom.TabPages.Add(new TabPage("LLM Analysis") { Controls = { llmPane } });
+            tabsBottom.TabPages.Add(new TabPage("Log") { Controls = { logControl } });
+            splitRight.Panel2.Controls.Add(tabsBottom);
+
+            // Add patch panel on top of right side
+            var rightWithPatch = new Panel { Dock = DockStyle.Fill };
+            patchPanel.Dock = DockStyle.Top;
+            patchPanel.Height = 100;
+            rightWithPatch.Controls.Add(splitRight);
+            rightWithPatch.Controls.Add(patchPanel);
+
+            // Compose main layout
+            splitMain.Panel1.Controls.Add(splitLeft);
+            splitMain.Panel2.Controls.Add(rightWithPatch);
         }
 
         // ---------------------------------------------------------

@@ -10,9 +10,9 @@ namespace ReverseEngineering.WinForms.LLM
     /// </summary>
     public partial class LLMPane : UserControl
     {
-        private readonly RichTextBox _resultBox;
-        private readonly Label _statusLabel;
-        private readonly Button _copyButton;
+        private RichTextBox _resultBox;
+        private Label _statusLabel;
+        private Button _copyButton;
         private bool _isAnalyzing;
 
         public LLMPane()
@@ -63,7 +63,7 @@ namespace ReverseEngineering.WinForms.LLM
             };
             _resultBox.LinkClicked += (s, e) =>
             {
-                if (e.LinkText.StartsWith("http"))
+                if (!string.IsNullOrEmpty(e.LinkText) && e.LinkText.StartsWith("http"))
                 {
                     System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(e.LinkText) { UseShellExecute = true });
                 }

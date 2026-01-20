@@ -81,7 +81,7 @@ namespace ReverseEngineering.Core.Analysis
                 {
                     yield return block;
 
-                    foreach (var succ in block.Successors.Reverse())
+                    foreach (var succ in block.Successors.OrderByDescending(x => x))
                     {
                         if (!visited.Contains(succ))
                             stack.Push(succ);

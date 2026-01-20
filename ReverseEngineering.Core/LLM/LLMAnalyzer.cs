@@ -31,7 +31,7 @@ namespace ReverseEngineering.Core.LLM
         {
             if (instruction == null) return string.Empty;
 
-            var prompt = $"Explain this x86-64 instruction: {instruction.Mnemonic} {instruction.OpStr}";
+            var prompt = $"Explain this x86-64 instruction: {instruction.Mnemonic} {instruction.Operands}";
             return await _client.ChatAsync(prompt, RE_SYSTEM_PROMPT, cancellationToken);
         }
 
@@ -50,7 +50,7 @@ namespace ReverseEngineering.Core.LLM
             
             foreach (var ins in instructions)
             {
-                asmBuilder.AppendLine($"{ins.Address:X}  {ins.Mnemonic} {ins.OpStr}");
+                asmBuilder.AppendLine($"{ins.Address:X}  {ins.Mnemonic} {ins.Operands}");
                 if (ins.Address - functionStart > 100) break; // Limit to first 100 bytes for analysis
             }
 
@@ -74,7 +74,7 @@ namespace ReverseEngineering.Core.LLM
             for (int i = 0; i < Math.Min(10, instructions.Count); i++)
             {
                 var ins = instructions[i];
-                asmBuilder.AppendLine($"{ins.Address:X}  {ins.Mnemonic} {ins.OpStr}");
+                asmBuilder.AppendLine($"{ins.Address:X}  {ins.Mnemonic} {ins.Operands}");
             }
 
             var prompt = $"Analyze this function prologue and suggest its signature (return type, parameters):\n\n{asmBuilder}\n\nSignature:";
@@ -97,7 +97,7 @@ namespace ReverseEngineering.Core.LLM
             for (int i = 0; i < limit; i++)
             {
                 var ins = instructions[i];
-                asmBuilder.AppendLine($"{ins.Address:X}  {ins.Mnemonic} {ins.OpStr}");
+                asmBuilder.AppendLine($"{ins.Address:X}  {ins.Mnemonic} {ins.Operands}");
             }
 
             var prompt = $"Identify any cryptographic, compression, or algorithmic patterns in this code:\n\n{asmBuilder}\n\nPattern:";
@@ -120,7 +120,7 @@ namespace ReverseEngineering.Core.LLM
             for (int i = 0; i < limit; i++)
             {
                 var ins = instructions[i];
-                asmBuilder.AppendLine($"{ins.Address:X}  {ins.Mnemonic} {ins.OpStr}");
+                asmBuilder.AppendLine($"{ins.Address:X}  {ins.Mnemonic} {ins.Operands}");
             }
 
             var prompt = $"Suggest meaningful variable names for registers and memory locations in this code:\n\n{asmBuilder}\n\nSuggested names:";
@@ -143,7 +143,7 @@ namespace ReverseEngineering.Core.LLM
             {
                 if (ins.Mnemonic.StartsWith("j") || ins.Mnemonic == "call")
                 {
-                    branches.Add($"{ins.Address:X}  {ins.Mnemonic} {ins.OpStr}");
+                    branches.Add($"{ins.Address:X}  {ins.Mnemonic} {ins.Operands}");
                 }
             }
 

@@ -43,8 +43,8 @@ namespace ReverseEngineering.WinForms
             this.disasmView = new DisassemblyControl();
             this.patchPanel = new PatchPanel();
             this.logControl = new LogControl();
-            this.symbolTree = new SymbolTreeControl();
-            this.graphControl = new GraphControl();
+            this.symbolTree = null!;  // Will be initialized in FormMain.cs after CoreEngine is ready
+            this.graphControl = null!;  // Will be initialized in FormMain.cs after CoreEngine is ready
             this.llmPane = new LLMPane();
 
             // MenuStrip
@@ -92,47 +92,15 @@ namespace ReverseEngineering.WinForms
             this.patchPanel.Dock = DockStyle.Top;
             this.patchPanel.Height = 150;
 
-            // SymbolTree
-            this.symbolTree.Dock = DockStyle.Fill;
-            this.symbolTree.Text = "Symbols & Functions";
-
-            // GraphControl
-            this.graphControl.Dock = DockStyle.Fill;
-            this.graphControl.Text = "Control Flow Graph";
-
-            // LLMPane
-            this.llmPane.Dock = DockStyle.Fill;
-            this.llmPane.Text = "LM Studio Analysis";
-
-            // LogControl
-            this.logControl.Dock = DockStyle.Fill;
+            // NOTE: SymbolTree, GraphControl, LLMPane will be configured in FormMain.cs
+            // after CoreEngine initialization
 
             // Compose left side: Hex over Disasm
             this.splitLeft.Panel1.Controls.Add(this.hexEditor);
             this.splitLeft.Panel2.Controls.Add(this.disasmView);
 
-            // Compose right side top: SymbolTree and GraphControl in tabs
-            var tabsTop = new TabControl { Dock = DockStyle.Fill };
-            tabsTop.TabPages.Add(new TabPage("Symbols") { Controls = { this.symbolTree } });
-            tabsTop.TabPages.Add(new TabPage("CFG") { Controls = { this.graphControl } });
-            this.splitRight.Panel1.Controls.Add(tabsTop);
-
-            // Compose right side bottom: LLMPane and LogControl in tabs
-            var tabsBottom = new TabControl { Dock = DockStyle.Fill };
-            tabsBottom.TabPages.Add(new TabPage("LLM Analysis") { Controls = { this.llmPane } });
-            tabsBottom.TabPages.Add(new TabPage("Log") { Controls = { this.logControl } });
-            this.splitRight.Panel2.Controls.Add(tabsBottom);
-
-            // Add patch panel on top of right side
-            var rightWithPatch = new Panel { Dock = DockStyle.Fill };
-            this.patchPanel.Dock = DockStyle.Top;
-            this.patchPanel.Height = 100;
-            rightWithPatch.Controls.Add(this.splitRight);
-            rightWithPatch.Controls.Add(this.patchPanel);
-
-            // Compose main layout
-            this.splitMain.Panel1.Controls.Add(this.splitLeft);
-            this.splitMain.Panel2.Controls.Add(rightWithPatch);
+            // NOTE: Right side tab controls will be configured in FormMain.cs
+            // after symbolTree, graphControl, llmPane, logControl are initialized
 
             // Form
             this.Controls.Add(this.splitMain);

@@ -170,7 +170,8 @@ namespace ReverseEngineering.WinForms
 
             // Highlight selected line
             int lineStart = GetFirstCharIndexFromLine(_selectedIndex);
-            int lineLength = _instructions[_selectedIndex].ToString().Length;
+            var lineText = _instructions[_selectedIndex].ToString() ?? "";
+            int lineLength = lineText.Length;
 
             if (lineStart >= 0)
             {

@@ -197,7 +197,7 @@ namespace ReverseEngineering.WinForms.Compatibility
             control.ForeColor = Color.FromArgb(200, 200, 200);
         }
 
-        private void TestListBox_SelectedIndexChanged(object sender, EventArgs e)
+        private void TestListBox_SelectedIndexChanged(object? sender, EventArgs e)
         {
             if (_testListBox.SelectedItem is string test)
             {
@@ -205,7 +205,7 @@ namespace ReverseEngineering.WinForms.Compatibility
             }
         }
 
-        private async void RunAllButton_Click(object sender, EventArgs e)
+        private async void RunAllButton_Click(object? sender, EventArgs e)
         {
             _runAllButton.Enabled = false;
             _runSelectedButton.Enabled = false;
@@ -235,7 +235,7 @@ namespace ReverseEngineering.WinForms.Compatibility
             }
         }
 
-        private async void RunSelectedButton_Click(object sender, EventArgs e)
+        private async void RunSelectedButton_Click(object? sender, EventArgs e)
         {
             if (_testListBox.SelectedItem == null)
             {
@@ -251,7 +251,7 @@ namespace ReverseEngineering.WinForms.Compatibility
 
             try
             {
-                var selected = _testListBox.SelectedItem.ToString();
+                var selected = _testListBox.SelectedItem.ToString() ?? "";
                 var result = await Task.Run(() => RunSelectedTest(selected));
                 _detailsTextBox.Text = result;
                 _statusLabel.Text = "Test completed";
@@ -338,7 +338,7 @@ namespace ReverseEngineering.WinForms.Compatibility
             _summaryLabel.Text = $"Results: {passed} passed, {failed} failed out of {results.Count} total tests";
         }
 
-        private void ExportButton_Click(object sender, EventArgs e)
+        private void ExportButton_Click(object? sender, EventArgs e)
         {
             using (var sfd = new SaveFileDialog
             {

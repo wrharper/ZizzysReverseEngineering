@@ -32,7 +32,7 @@ namespace ReverseEngineering.Core
         );
         private static readonly object _lockObj = new();
 
-        public event Action<LogEntry>? LogAdded;
+        public static event Action<LogEntry>? LogAdded;
 
         static Logger()
         {

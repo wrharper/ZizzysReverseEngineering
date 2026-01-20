@@ -140,7 +140,7 @@ namespace ReverseEngineering.WinForms.MainWindow
             var tools = new ToolStripMenuItem("Tools");
 
             var settingsItem = new ToolStripMenuItem("Settings...", null, ShowSettingsDialog);
-            settingsItem.ShortcutKeys = Keys.Control | Keys.Comma;
+            settingsItem.ShortcutKeys = Keys.Control | Keys.Oemcomma;
             tools.DropDownItems.Add(settingsItem);
 
             tools.DropDownItems.Add(new ToolStripSeparator());
@@ -170,8 +170,9 @@ namespace ReverseEngineering.WinForms.MainWindow
             if (undoItem != null)
             {
                 undoItem.Enabled = _core.UndoRedo.CanUndo;
-                undoItem.Text = _core.UndoRedo.CanUndo
-                    ? $"Undo {_core.UndoRedo.GetNextUndoDescription()}"
+                var undoDesc = _core.UndoRedo.GetNextUndoDescription();
+                undoItem.Text = _core.UndoRedo.CanUndo && !string.IsNullOrEmpty(undoDesc)
+                    ? $"Undo {undoDesc}"
                     : "Undo";
             }
 

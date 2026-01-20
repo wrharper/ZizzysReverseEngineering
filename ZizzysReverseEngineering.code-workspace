@@ -1,0 +1,167 @@
+{
+  "folders": [
+    {
+      "name": "ReverseEngineering.Core",
+      "path": "ReverseEngineering.Core"
+    },
+    {
+      "name": "ReverseEngineering.WinForms",
+      "path": "ReverseEngineering.WinForms"
+    },
+    {
+      "name": "ReverseEngineering.Tests",
+      "path": "ReverseEngineering.Tests"
+    },
+    {
+      "name": "Root",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "dotnet.defaultSolutionOrFolderPath": ".",
+    "[csharp]": {
+      "editor.formatOnSave": true,
+      "editor.defaultFormatter": "ms-dotnettools.csharp"
+    },
+    "omnisharp.enableRoslynAnalyzers": true,
+    "omnisharp.enableEditorConfigSupport": true,
+    "files.exclude": {
+      "**/.git": true,
+      "**/bin": true,
+      "**/obj": true,
+      "**/.vs": true,
+      "**/.vscode": false
+    },
+    "search.exclude": {
+      "**/.git": true,
+      "**/bin": true,
+      "**/obj": true,
+      "**/.vs": true
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "ms-dotnettools.csharp",
+      "ms-dotnettools.vscode-dotnet-runtime",
+      "ms-dotnettools.makefile-tools",
+      "ms-vscode.makefile-tools"
+    ]
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "build",
+        "command": "dotnet",
+        "type": "shell",
+        "args": [
+          "build"
+        ],
+        "problemMatcher": "$msCompile",
+        "group": {
+          "kind": "build",
+          "isDefault": true
+        }
+      },
+      {
+        "label": "build-core",
+        "command": "dotnet",
+        "type": "shell",
+        "args": [
+          "build",
+          "ReverseEngineering.Core/ReverseEngineering.Core.csproj"
+        ],
+        "problemMatcher": "$msCompile",
+        "group": "build"
+      },
+      {
+        "label": "build-winforms",
+        "command": "dotnet",
+        "type": "shell",
+        "args": [
+          "build",
+          "ReverseEngineering.WinForms/ReverseEngineering.WinForms.csproj"
+        ],
+        "problemMatcher": "$msCompile",
+        "group": "build"
+      },
+      {
+        "label": "build-tests",
+        "command": "dotnet",
+        "type": "shell",
+        "args": [
+          "build",
+          "ReverseEngineering.Tests/ReverseEngineering.Tests.csproj"
+        ],
+        "problemMatcher": "$msCompile",
+        "group": "build"
+      },
+      {
+        "label": "test",
+        "command": "dotnet",
+        "type": "shell",
+        "args": [
+          "test",
+          "--no-build"
+        ],
+        "problemMatcher": "$msCompile",
+        "group": {
+          "kind": "test",
+          "isDefault": true
+        }
+      },
+      {
+        "label": "clean",
+        "command": "dotnet",
+        "type": "shell",
+        "args": [
+          "clean"
+        ],
+        "problemMatcher": "$msCompile",
+        "group": "build"
+      },
+      {
+        "label": "run-app",
+        "command": "dotnet",
+        "type": "shell",
+        "args": [
+          "run",
+          "--project",
+          "ReverseEngineering.WinForms"
+        ],
+        "problemMatcher": "$msCompile",
+        "group": {
+          "kind": "test",
+          "isDefault": false
+        }
+      }
+    ]
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Run WinForms App",
+        "type": "coreclr",
+        "request": "launch",
+        "program": "${workspaceFolder}/ReverseEngineering.WinForms/bin/Debug/net10.0-windows/ReverseEngineering.WinForms.dll",
+        "args": [],
+        "cwd": "${workspaceFolder}/ReverseEngineering.WinForms",
+        "stopAtEntry": false,
+        "console": "internalConsole",
+        "preLaunchTask": "build-winforms"
+      },
+      {
+        "name": "Run Tests",
+        "type": "coreclr",
+        "request": "launch",
+        "program": "${workspaceFolder}/ReverseEngineering.Tests/bin/Debug/net10.0-windows/ReverseEngineering.Tests.dll",
+        "args": [],
+        "cwd": "${workspaceFolder}",
+        "stopAtEntry": false,
+        "console": "internalConsole",
+        "preLaunchTask": "build-tests"
+      }
+    ]
+  }
+}

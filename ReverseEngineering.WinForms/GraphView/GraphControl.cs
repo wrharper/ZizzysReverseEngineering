@@ -19,7 +19,7 @@ namespace ReverseEngineering.WinForms.GraphView
         private ControlFlowGraph? _cfg;
         private readonly Dictionary<ulong, Rectangle> _nodeRects = [];
         private float _scale = 1.0f;
-        private Point _panOffset = Point.Zero;
+        private Point _panOffset = default(Point);
 
         public event Action<ulong>? BlockSelected;
 
@@ -162,7 +162,7 @@ namespace ReverseEngineering.WinForms.GraphView
             var queue = new Queue<ulong>();
 
             // BFS to assign levels
-            foreach (var entry in _cfg.EntryPoints)
+            foreach (var entry in _cfg?.EntryPoints ?? new List<ulong>())
             {
                 levels[entry] = 0;
                 queue.Enqueue(entry);

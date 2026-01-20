@@ -41,7 +41,7 @@ namespace ReverseEngineering.WinForms.MainWindow
             if (_core == null)
                 return;
 
-            int offset = _core.AddressToOffset(address);
+            int offset = (int)_core.AddressToOffset(address);
             if (offset < 0)
                 return;
 
@@ -65,7 +65,7 @@ private async void OnLineEdited(int index, string text)
     {
         await Task.Delay(80, token);
 
-        if (index < 0 || index >= _instructions.Count)
+    if (index < 0 || index >= _instructions.Count())
             return;
 
         var ins = _instructions[index];
@@ -78,7 +78,7 @@ private async void OnLineEdited(int index, string text)
             return;
         }
 
-        int offset = _core.AddressToOffset(address);
+        int offset = (int)_core.AddressToOffset(address);
         _core.HexBuffer.WriteBytes(offset, bytes);
 
         await Task.Run(() => _core.RebuildInstructionAtOffset(offset), token);
@@ -141,14 +141,14 @@ private void LogAssemblyEdit(Instruction originalInstruction, string newAsmText,
     // Track byte changes
     if (success && newBytes.Length > 0)
     {
-        for (int i = 0; i < newBytes.Length && i < originalInstruction.Bytes.Count; i++)
+        for (int i = 0; i < newBytes.Length && i < originalInstruction.Bytes.Length; i++)
         {
             var origByte = originalInstruction.Bytes[i];
             if (origByte != newBytes[i])
             {
                 logEntry.Changes.Add(new ByteChange
                 {
-                    Offset = originalInstruction.Address + (ulong)i,
+                    Offset = (int)(originalInstruction.Address + (ulong)i),
                     OriginalByte = origByte,
                     NewByte = newBytes[i],
                     AssemblyBefore = originalInstruction.Mnemonic + " " + originalInstruction.Operands,
@@ -191,7 +191,7 @@ private void LogAssemblyEdit(Instruction originalInstruction, string newAsmText,
             var selectedAddress = _view.GetSelectedInstructionAddress();
             if (selectedAddress == 0) return -1;
 
-            var index = _core.OffsetToInstructionIndex(_core.AddressToOffset(selectedAddress));
+            var index = _core.OffsetToInstructionIndex((int)_core.AddressToOffset(selectedAddress));
             return index;
         }
 

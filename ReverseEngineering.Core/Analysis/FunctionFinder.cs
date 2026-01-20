@@ -147,8 +147,8 @@ namespace ReverseEngineering.Core.Analysis
                 if (ins.Raw == null)
                     continue;
 
-                var code = ins.Raw.Value.Code;
-                if (code == Code.Call || code == Code.Lcall)
+                var mnemonic = ins.Raw.Value.Mnemonic;
+                if (mnemonic == Mnemonic.Call)
                 {
                     var target = GetCallTarget(ins);
                     if (target.HasValue)
@@ -182,23 +182,23 @@ namespace ReverseEngineering.Core.Analysis
             if (ins.Raw == null)
                 return false;
 
-            var code = ins.Raw.Value.Code;
+            var mnemonic = ins.Raw.Value.Mnemonic;
 
             // Common x86/x64 prologue patterns:
             // 1. PUSH RBP / MOV RBP, RSP
-            if (code == Code.Push_r64 && index + 1 < disassembly.Count)
+            if (mnemonic == Mnemonic.Push && index + 1 < disassembly.Count)
             {
                 var next = disassembly[index + 1];
-                if (next.Raw?.Value.Code == Code.Mov_r64_r64)
+                if (next.Raw != null && next.Raw.Value.Mnemonic == Mnemonic.Mov)
                     return true; // Likely "PUSH RBP; MOV RBP, RSP"
             }
 
             // 2. SUB RSP, imm
-            if (code == Code.Sub_r64_imm32 || code == Code.Sub_r64_imm8)
+            if (mnemonic == Mnemonic.Sub)
                 return true;
 
             // 3. MOV RBP, RSP
-            if (code == Code.Mov_r64_r64)
+            if (mnemonic == Mnemonic.Mov)
             {
                 var raw = ins.Raw.Value;
                 // Check if it's MOV RBP, RSP
@@ -207,7 +207,7 @@ namespace ReverseEngineering.Core.Analysis
             }
 
             // 4. XOR EAX, EAX (common in x64 ABI for return value)
-            if (code == Code.Xor_r32_r32)
+            if (mnemonic == Mnemonic.Xor)
                 return true;
 
             return false;
@@ -250,7 +250,7 @@ namespace ReverseEngineering.Core.Analysis
                 size += ins.Length;
 
                 // Stop at obvious function boundaries
-                if (ins.Raw?.Value.Code == Code.Ret)
+                if (ins.Raw != null && ins.Raw.Value.Mnemonic == Mnemonic.Ret)
                     break;
 
                 if (size > MaxFunctionSize)

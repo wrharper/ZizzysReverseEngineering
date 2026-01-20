@@ -85,9 +85,9 @@ namespace ReverseEngineering.Core.Analysis
         {
             // Extract from PE import table (IAT)
             // Scan the import address table for function pointers
-            if (engine?.HexBuffer?.Data == null) return;
+            if (engine?.HexBuffer?.Bytes == null) return;
 
-            var fileBytes = engine.HexBuffer.Data;
+            var fileBytes = engine.HexBuffer.Bytes;
             
             try
             {
@@ -102,9 +102,9 @@ namespace ReverseEngineering.Core.Analysis
         private static void AddExportedSymbols(CoreEngine engine, Dictionary<ulong, Symbol> symbols)
         {
             // Extract from PE export table (EAT)
-            if (engine?.HexBuffer?.Data == null) return;
+            if (engine?.HexBuffer?.Bytes == null) return;
 
-            var fileBytes = engine.HexBuffer.Data;
+            var fileBytes = engine.HexBuffer.Bytes;
             
             try
             {
@@ -154,7 +154,7 @@ namespace ReverseEngineering.Core.Analysis
 
             // Find section containing import table
             stream.Position = peOffset + 24 + sizeOfOptionalHeader;
-            ulong sectionOffset = stream.Position;
+            ulong sectionOffset = (ulong)stream.Position;
 
             for (int i = 0; i < numberOfSections; i++)
             {
@@ -315,9 +315,9 @@ namespace ReverseEngineering.Core.Analysis
         private static void AddStringSymbols(CoreEngine engine, Dictionary<ulong, Symbol> symbols)
         {
             // Scan data sections for null-terminated strings
-            if (engine?.HexBuffer?.Data == null) return;
+            if (engine?.HexBuffer?.Bytes == null) return;
 
-            var fileBytes = engine.HexBuffer.Data;
+            var fileBytes = engine.HexBuffer.Bytes;
             var stringMatches = PatternMatcher.FindAllStrings(fileBytes, minLength: 4);
 
             foreach (var match in stringMatches)

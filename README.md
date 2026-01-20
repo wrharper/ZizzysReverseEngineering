@@ -10,7 +10,7 @@ A professional-grade binary reverse engineering tool with **local AI-powered ana
 
 ### 1. Start LM Studio (Optional, for AI)
 ```bash
-lm-studio --listen 127.0.0.1:1234 --load mistral-7b
+lm-studio --listen 127.0.0.1:1234 --load openai/gpt-oss-120b
 ```
 
 ### 2. Build & Run

@@ -7,7 +7,7 @@ namespace ReverseEngineering.WinForms
 {
     public static class ThemeManager
     {
-        public static AppTheme CurrentTheme { get; private set; }
+        public static AppTheme? CurrentTheme { get; private set; }
 
         public static void ApplyTheme(Control root, AppTheme theme)
         {

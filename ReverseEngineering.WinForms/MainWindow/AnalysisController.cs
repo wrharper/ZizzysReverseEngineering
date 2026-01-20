@@ -164,7 +164,7 @@ namespace ReverseEngineering.WinForms.MainWindow
 
             try
             {
-                var prompt = $"Explain this x86-64 instruction: {instruction.Mnemonic} {instruction.OpStr}";
+                var prompt = $"Explain this x86-64 instruction: {instruction.Mnemonic} {instruction.Operands}";
                 var explanation = await _llmAnalyzer.ExplainInstructionAsync(instruction, cancellationToken);
                 
                 timer.Stop();

@@ -173,8 +173,8 @@ namespace ReverseEngineering.Core.Analysis
             if (ins.Raw == null)
                 return false;
 
-            var code = ins.Raw.Value.Code;
-            return code == Code.Ret || code == Code.Jmp || IsConditionalJump(ins);
+            var mnemonic = ins.Raw.Value.Mnemonic;
+            return mnemonic == Mnemonic.Ret || mnemonic == Mnemonic.Jmp || IsConditionalJump(ins);
         }
 
         private static bool IsTerminator(Instruction ins)
@@ -182,8 +182,8 @@ namespace ReverseEngineering.Core.Analysis
             if (ins.Raw == null)
                 return false;
 
-            var code = ins.Raw.Value.Code;
-            return code == Code.Ret;
+            var mnemonic = ins.Raw.Value.Mnemonic;
+            return mnemonic == Mnemonic.Ret;
         }
 
         private static bool IsJump(Instruction ins)
@@ -191,8 +191,8 @@ namespace ReverseEngineering.Core.Analysis
             if (ins.Raw == null)
                 return false;
 
-            var code = ins.Raw.Value.Code;
-            return code == Code.Jmp || IsConditionalJump(ins);
+            var mnemonic = ins.Raw.Value.Mnemonic;
+            return mnemonic == Mnemonic.Jmp || IsConditionalJump(ins);
         }
 
         private static bool IsUnconditionalJump(Instruction ins)
@@ -200,7 +200,7 @@ namespace ReverseEngineering.Core.Analysis
             if (ins.Raw == null)
                 return false;
 
-            return ins.Raw.Value.Code == Code.Jmp;
+            return ins.Raw.Value.Mnemonic == Mnemonic.Jmp;
         }
 
         private static bool IsConditionalJump(Instruction ins)
@@ -208,8 +208,17 @@ namespace ReverseEngineering.Core.Analysis
             if (ins.Raw == null)
                 return false;
 
-            var code = ins.Raw.Value.Code;
-            return code >= Code.Jo && code <= Code.Jg; // Conditional branch range in Iced
+            var mnemonic = ins.Raw.Value.Mnemonic;
+            // Check for common conditional jump mnemonics
+            return mnemonic switch
+            {
+                Mnemonic.Jo or Mnemonic.Jno or Mnemonic.Jb or Mnemonic.Jae or
+                Mnemonic.Je or Mnemonic.Jne or Mnemonic.Jbe or Mnemonic.Ja or
+                Mnemonic.Js or Mnemonic.Jns or Mnemonic.Jp or Mnemonic.Jnp or
+                Mnemonic.Jl or Mnemonic.Jge or Mnemonic.Jle or Mnemonic.Jg or
+                Mnemonic.Jcxz or Mnemonic.Jecxz or Mnemonic.Jrcxz => true,
+                _ => false
+            };
         }
 
         // ---------------------------------------------------------
