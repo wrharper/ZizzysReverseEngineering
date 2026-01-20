@@ -8,14 +8,14 @@ namespace ReverseEngineering.WinForms
 {
     public class PatchPanel : UserControl
     {
-        private CoreEngine _core;
-        private HexEditorControl _hexEditor;
-        private DisassemblyControl _disasmView;
-        private LogControl _log;
+        private CoreEngine _core = null!;
+        private HexEditorControl _hexEditor = null!;
+        private DisassemblyControl _disasmView = null!;
+        private LogControl _log = null!;
 
-        private TextBox txtOffset;
-        private TextBox txtBytes;
-        private Button btnApply;
+        private TextBox txtOffset = null!;
+        private TextBox txtBytes = null!;
+        private Button btnApply = null!;
 
         public PatchPanel()
         {

@@ -1,4 +1,6 @@
-﻿using ReverseEngineering.Core;
+﻿using System.Diagnostics;
+using ReverseEngineering.Core;
+using ReverseEngineering.Core.AILogs;
 using ReverseEngineering.Core.IcedAssembly;
 using ReverseEngineering.Core.Keystone;
 using ReverseEngineering.Core.ProjectSystem;
@@ -11,16 +13,18 @@ namespace ReverseEngineering.WinForms.MainWindow
         private readonly DisassemblyControl _view;
         private readonly HexEditorControl _hex;
         private CoreEngine _core;
+        private AILogsManager? _aiLogs;
 
         private List<Instruction> _instructions = [];
         private CancellationTokenSource? _asmToHexCts;
         private bool _suppressEvents;
 
-        public DisassemblyController(DisassemblyControl view, HexEditorControl hex, CoreEngine core)
+        public DisassemblyController(DisassemblyControl view, HexEditorControl hex, CoreEngine core, AILogsManager? aiLogs = null)
         {
             _view = view;
             _hex = hex;
             _core = core;
+            _aiLogs = aiLogs;
 
             // ASM → HEX sync (selection)
             _view.InstructionSelected += OnInstructionSelected;
@@ -46,50 +50,116 @@ namespace ReverseEngineering.WinForms.MainWindow
             _hex.ScrollTo(offset);
             _suppressEvents = false;
         }
+private async void OnLineEdited(int index, string text)
+{
+    if (_suppressEvents)
+        return;
 
-        // ---------------------------------------------------------
-        //  ASM → HEX SYNC (editing)
-        // ---------------------------------------------------------
-        private async void OnLineEdited(int index, string text)
+    _asmToHexCts?.Cancel();
+    _asmToHexCts = new CancellationTokenSource();
+    var token = _asmToHexCts.Token;
+
+    var timer = Stopwatch.StartNew();
+    
+    try
+    {
+        await Task.Delay(80, token);
+
+        if (index < 0 || index >= _instructions.Count)
+            return;
+
+        var ins = _instructions[index];
+        ulong address = ins.Address;
+
+        byte[] bytes = await Task.Run(() => KeystoneAssembler.Assemble(text, address, _core.Is64Bit), token);
+        if (bytes == null || bytes.Length == 0)
         {
-            if (_suppressEvents)
-                return;
+            LogAssemblyEdit(ins, text, bytes ?? [], timer, false, "Keystone returned empty bytes");
+            return;
+        }
 
-            _asmToHexCts?.Cancel();
-            _asmToHexCts = new CancellationTokenSource();
-            var token = _asmToHexCts.Token;
+        int offset = _core.AddressToOffset(address);
+        _core.HexBuffer.WriteBytes(offset, bytes);
 
-            try
+        await Task.Run(() => _core.RebuildInstructionAtOffset(offset), token);
+
+        // Log successful assembly edit
+        LogAssemblyEdit(ins, text, bytes, timer, true, null);
+
+        // Synchronize hex view with new bytes
+        _hex.SetSelection(offset, offset + bytes.Length - 1);
+        _hex.ScrollTo(offset);
+
+        _suppressEvents = true;
+        _instructions = _core.Disassembly;
+        _view.Is64Bit = _core.Is64Bit;
+        _view.SetInstructions(_instructions);
+        _hex.SetBuffer(_core.HexBuffer);
+        _suppressEvents = false;
+    }
+    catch (TaskCanceledException)
+    {
+        // ignored
+    }
+    catch (Exception ex)
+    {
+        timer.Stop();
+        
+        // Log failure
+        if (_aiLogs != null && index >= 0 && index < _instructions.Count)
+        {
+            var ins = _instructions[index];
+            var errorEntry = new AILogEntry
             {
-                await Task.Delay(80, token);
+                Operation = "AssemblyEdit",
+                Prompt = $"Assemble: {text} at {ins.Address:X8}",
+                AIOutput = $"Error: {ex.Message}",
+                Status = "Error",
+                DurationMs = timer.ElapsedMilliseconds
+            };
+            _aiLogs.SaveLogEntry(errorEntry);
+        }
+    }
+}
 
-                if (index < 0 || index >= _instructions.Count)
-                    return;
+private void LogAssemblyEdit(Instruction originalInstruction, string newAsmText, byte[] newBytes, Stopwatch timer, bool success, string? errorMsg)
+{
+    if (_aiLogs == null)
+        return;
 
-                var ins = _instructions[index];
-                ulong address = ins.Address;
+    timer.Stop();
 
-                byte[] bytes = await Task.Run(() => KeystoneAssembler.Assemble(text, address, _core.Is64Bit), token);
-                if (bytes == null || bytes.Length == 0)
-                    return;
+    var logEntry = new AILogEntry
+    {
+        Operation = "AssemblyEdit",
+        Prompt = $"Assemble: {newAsmText} at {originalInstruction.Address:X8}",
+        AIOutput = success ? $"Generated {newBytes.Length} bytes" : (errorMsg ?? "Assembly failed"),
+        Status = success ? "Success" : "Error",
+        DurationMs = timer.ElapsedMilliseconds
+    };
 
-                int offset = _core.AddressToOffset(address);
-                _core.HexBuffer.WriteBytes(offset, bytes);
-
-                await Task.Run(() => _core.RebuildInstructionAtOffset(offset), token);
-
-                _suppressEvents = true;
-                _instructions = _core.Disassembly;
-                _view.Is64Bit = _core.Is64Bit;
-                _view.SetInstructions(_instructions);
-                _hex.SetBuffer(_core.HexBuffer);
-                _suppressEvents = false;
-            }
-            catch (TaskCanceledException)
+    // Track byte changes
+    if (success && newBytes.Length > 0)
+    {
+        for (int i = 0; i < newBytes.Length && i < originalInstruction.Bytes.Count; i++)
+        {
+            var origByte = originalInstruction.Bytes[i];
+            if (origByte != newBytes[i])
             {
-                // ignored
+                logEntry.Changes.Add(new ByteChange
+                {
+                    Offset = originalInstruction.Address + (ulong)i,
+                    OriginalByte = origByte,
+                    NewByte = newBytes[i],
+                    AssemblyBefore = originalInstruction.Mnemonic + " " + originalInstruction.Operands,
+                    AssemblyAfter = newAsmText
+                });
             }
         }
+    }
+
+    _aiLogs.SaveLogEntry(logEntry);
+}
 
 
         // ---------------------------------------------------------
@@ -115,5 +185,22 @@ namespace ReverseEngineering.WinForms.MainWindow
         // ---------------------------------------------------------
         public void SelectInstruction(int index) => _view.SelectInstruction(index);
         public void ScrollTo(int index) => _view.ScrollTo(index);
+
+        public int GetSelectedInstructionIndex()
+        {
+            var selectedAddress = _view.GetSelectedInstructionAddress();
+            if (selectedAddress == 0) return -1;
+
+            var index = _core.OffsetToInstructionIndex(_core.AddressToOffset(selectedAddress));
+            return index;
+        }
+
+        public ulong GetSelectedInstructionAddress() => _view.GetSelectedInstructionAddress();
+
+        public void RefreshDisassembly()
+        {
+            _instructions = _core.Disassembly;
+            _view.SetInstructions(_instructions);
+        }
     }
 }

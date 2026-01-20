@@ -162,5 +162,98 @@ namespace ReverseEngineering.Core
 
             return sb.ToString();
         }
+
+        // ---------------------------------------------------------
+        //  PERFORMANCE & OPTIMIZATION
+        // ---------------------------------------------------------
+
+        /// <summary>
+        /// Get count of modified bytes (for diagnostics)
+        /// </summary>
+        public int GetModifiedCount()
+        {
+            int count = 0;
+            for (int i = 0; i < Modified.Length; i++)
+            {
+                if (Modified[i])
+                    count++;
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// Check if a range has any modifications
+        /// </summary>
+        public bool HasModificationsInRange(int start, int end)
+        {
+            for (int i = Math.Max(0, start); i <= Math.Min(Modified.Length - 1, end); i++)
+            {
+                if (Modified[i])
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Reset modifications (for re-patching)
+        /// </summary>
+        public void ResetModifications()
+        {
+            Array.Clear(Modified, 0, Modified.Length);
+        }
+
+        /// <summary>
+        /// Restore buffer to original state
+        /// </summary>
+        public void RevertToOriginal()
+        {
+            Array.Copy(OriginalBytes, 0, Bytes, 0, Bytes.Length);
+            ResetModifications();
+        }
+
+        /// <summary>
+        /// Get modified byte ranges (for incremental operations)
+        /// </summary>
+        public List<(int start, int end)> GetModifiedRanges()
+        {
+            var ranges = new List<(int start, int end)>();
+            int? rangeStart = null;
+
+            for (int i = 0; i < Modified.Length; i++)
+            {
+                if (Modified[i])
+                {
+                    if (!rangeStart.HasValue)
+                        rangeStart = i;
+                }
+                else
+                {
+                    if (rangeStart.HasValue)
+                    {
+                        ranges.Add((rangeStart.Value, i - 1));
+                        rangeStart = null;
+                    }
+                }
+            }
+
+            if (rangeStart.HasValue)
+                ranges.Add((rangeStart.Value, Modified.Length - 1));
+
+            return ranges;
+        }
+
+        /// <summary>
+        /// Get size in MB for diagnostics
+        /// </summary>
+        public double GetSizeInMB() => Bytes.Length / (1024.0 * 1024.0);
+
+        /// <summary>
+        /// Get memory overhead (for optimization)
+        /// </summary>
+        public int GetMemoryOverheadBytes()
+        {
+            // Estimate: Modified array + object overhead
+            return Modified.Length + 64;  // Rough estimate
+        }
     }
 }

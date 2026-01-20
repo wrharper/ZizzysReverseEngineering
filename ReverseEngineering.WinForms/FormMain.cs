@@ -1,6 +1,8 @@
 ﻿using ReverseEngineering.Core;
+using ReverseEngineering.Core.LLM;
 using ReverseEngineering.WinForms.HexEditor;
 using ReverseEngineering.WinForms.MainWindow;
+using ReverseEngineering.WinForms.LLM;
 using System;
 using System.Windows.Forms;
 
@@ -14,15 +16,23 @@ namespace ReverseEngineering.WinForms
         private readonly ThemeMenuController _themeController;
         private readonly HexEditorController _hexController;
         private readonly DisassemblyController _disasmController;
+        private readonly AnalysisController? _analysisController;
 
         public FormMain()
         {
             InitializeComponent();
 
             // ---------------------------------------------------------
+            //  LLM CLIENT (Optional, for LM Studio integration)
+            // ---------------------------------------------------------
+            var llmClient = new LocalLLMClient();
+
+            // ---------------------------------------------------------
             //  CONTROLLERS (RichTextBox disassembly)
             // ---------------------------------------------------------
             _disasmController = new DisassemblyController(disasmView, hexEditor, _core);
+
+            _analysisController = new AnalysisController(_core, symbolTree, graphControl, llmClient, llmPane);
 
             _menuController = new MainMenuController(
                 this,
@@ -31,7 +41,8 @@ namespace ReverseEngineering.WinForms
                 logControl,
                 _disasmController,
                 statusFile,
-                _core
+                _core,
+                _analysisController
             );
 
             _themeController = new ThemeMenuController(

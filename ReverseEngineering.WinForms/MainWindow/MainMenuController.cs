@@ -6,7 +6,10 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using ReverseEngineering.Core;
 using ReverseEngineering.Core.ProjectSystem;
+using ReverseEngineering.Core.AILogs;
 using ReverseEngineering.WinForms.HexEditor;
+using ReverseEngineering.WinForms.AILogs;
+using ReverseEngineering.WinForms.Compatibility;
 
 namespace ReverseEngineering.WinForms.MainWindow
 {
@@ -20,6 +23,8 @@ namespace ReverseEngineering.WinForms.MainWindow
         private readonly CoreEngine _core;
 
         private readonly DisassemblyController _disasmController;
+        private readonly AnalysisController? _analysisController;
+        private readonly AILogsManager? _aiLogsManager;
 
         private CancellationTokenSource? _hexToAsmCts;
         private bool _suppressEvents;
@@ -31,7 +36,9 @@ namespace ReverseEngineering.WinForms.MainWindow
             LogControl log,
             DisassemblyController disasmController,
             ToolStripStatusLabel statusFile,
-            CoreEngine core)
+            CoreEngine core,
+            AnalysisController? analysisController = null,
+            AILogsManager? aiLogsManager = null)
         {
             _form = form;
             _menu = menu;
@@ -40,6 +47,8 @@ namespace ReverseEngineering.WinForms.MainWindow
             _statusFile = statusFile;
             _core = core;
             _disasmController = disasmController;
+            _analysisController = analysisController;
+            _aiLogsManager = aiLogsManager ?? new AILogsManager();
 
             BuildMenu();
 
@@ -55,9 +64,167 @@ namespace ReverseEngineering.WinForms.MainWindow
             file.DropDownItems.Add(new ToolStripMenuItem("Open Project", null, OpenProject));
             file.DropDownItems.Add(new ToolStripMenuItem("Save Project", null, SaveProject));
             file.DropDownItems.Add(new ToolStripMenuItem("Export Patch", null, ExportPatch));
+            file.DropDownItems.Add(new ToolStripSeparator());
             file.DropDownItems.Add(new ToolStripMenuItem("Exit", null, (s, e) => _form.Close()));
 
             _menu.Items.Add(file);
+
+            // ---------------------------------------------------------
+            //  EDIT MENU (undo/redo)
+            // ---------------------------------------------------------
+            var edit = new ToolStripMenuItem("Edit");
+
+            var undoItem = new ToolStripMenuItem("Undo", null, UndoClick);
+            undoItem.ShortcutKeys = Keys.Control | Keys.Z;
+            edit.DropDownItems.Add(undoItem);
+
+            var redoItem = new ToolStripMenuItem("Redo", null, RedoClick);
+            redoItem.ShortcutKeys = Keys.Control | Keys.Y;
+            edit.DropDownItems.Add(redoItem);
+
+            edit.DropDownItems.Add(new ToolStripSeparator());
+
+            var findItem = new ToolStripMenuItem("Find...", null, FindClick);
+            findItem.ShortcutKeys = Keys.Control | Keys.F;
+            edit.DropDownItems.Add(findItem);
+
+            _menu.Items.Add(edit);
+
+            // ---------------------------------------------------------
+            //  ANALYSIS MENU
+            // ---------------------------------------------------------
+            if (_analysisController != null)
+            {
+                var analysis = new ToolStripMenuItem("Analysis");
+
+                var runAnalysisItem = new ToolStripMenuItem("Run Analysis", null, (s, e) => RunAnalysisClick());
+                runAnalysisItem.ShortcutKeys = Keys.Control | Keys.Shift | Keys.A;
+                analysis.DropDownItems.Add(runAnalysisItem);
+
+                analysis.DropDownItems.Add(new ToolStripSeparator());
+
+                var explainItem = new ToolStripMenuItem("Explain Instruction (LLM)", null, (s, e) => ExplainInstructionClick());
+                analysis.DropDownItems.Add(explainItem);
+
+                var pseudocodeItem = new ToolStripMenuItem("Generate Pseudocode (LLM)", null, (s, e) => GeneratePseudocodeClick());
+                analysis.DropDownItems.Add(pseudocodeItem);
+
+                _menu.Items.Add(analysis);
+            }
+
+            // ---------------------------------------------------------
+            //  AI MENU (Logs, debugging)
+            // ---------------------------------------------------------
+            var aiMenu = new ToolStripMenuItem("AI");
+
+            var viewLogsItem = new ToolStripMenuItem("View Logs...", null, ShowAILogsViewer);
+            aiMenu.DropDownItems.Add(viewLogsItem);
+
+            aiMenu.DropDownItems.Add(new ToolStripSeparator());
+
+            var clearLogsItem = new ToolStripMenuItem("Clear All Logs", null, (s, e) =>
+            {
+                if (MessageBox.Show("Clear all AI logs? This cannot be undone.", "Confirm", MessageBoxButtons.YesNo) == DialogResult.Yes)
+                {
+                    _aiLogsManager?.ClearAllLogs();
+                    _log.Append("AI logs cleared");
+                }
+            });
+            aiMenu.DropDownItems.Add(clearLogsItem);
+
+            _menu.Items.Add(aiMenu);
+
+            // ---------------------------------------------------------
+            //  TOOLS MENU (Settings, compatibility test, etc.)
+            // ---------------------------------------------------------
+            var tools = new ToolStripMenuItem("Tools");
+
+            var settingsItem = new ToolStripMenuItem("Settings...", null, ShowSettingsDialog);
+            settingsItem.ShortcutKeys = Keys.Control | Keys.Comma;
+            tools.DropDownItems.Add(settingsItem);
+
+            tools.DropDownItems.Add(new ToolStripSeparator());
+
+            var compatItem = new ToolStripMenuItem("Compatibility Tests", null, ShowCompatibilityDialog);
+            tools.DropDownItems.Add(compatItem);
+
+            _menu.Items.Add(tools);
+
+            // Subscribe to undo/redo changes to update menu
+            _core.UndoRedo.HistoryChanged += UpdateUndoRedoMenu;
+            UpdateUndoRedoMenu();
+        }
+
+        private void UpdateUndoRedoMenu()
+        {
+            if (_menu.Items.Count < 2)
+                return;
+
+            var edit = _menu.Items[1] as ToolStripMenuItem;
+            if (edit?.DropDownItems.Count < 2)
+                return;
+
+            var undoItem = edit.DropDownItems[0] as ToolStripMenuItem;
+            var redoItem = edit.DropDownItems[1] as ToolStripMenuItem;
+
+            if (undoItem != null)
+            {
+                undoItem.Enabled = _core.UndoRedo.CanUndo;
+                undoItem.Text = _core.UndoRedo.CanUndo
+                    ? $"Undo {_core.UndoRedo.GetNextUndoDescription()}"
+                    : "Undo";
+            }
+
+            if (redoItem != null)
+            {
+                redoItem.Enabled = _core.UndoRedo.CanRedo;
+                redoItem.Text = _core.UndoRedo.CanRedo
+                    ? $"Redo {_core.UndoRedo.GetNextRedoDescription()}"
+                    : "Redo";
+            }
+        }
+
+        private void UndoClick(object? s, EventArgs e)
+        {
+            _core.UndoRedo.Undo();
+            _core.RebuildDisassemblyFromBuffer();
+            _hex.Invalidate();
+            _disasmController.RefreshDisassembly();
+        }
+
+        private void RedoClick(object? s, EventArgs e)
+        {
+            _core.UndoRedo.Redo();
+            _core.RebuildDisassemblyFromBuffer();
+            _hex.Invalidate();
+            _disasmController.RefreshDisassembly();
+        }
+
+        private void FindClick(object? s, EventArgs e)
+        {
+            var searchDialog = new ReverseEngineering.WinForms.Search.SearchDialog(_core);
+            searchDialog.ResultSelected += (result) =>
+            {
+                if (result.Offset >= 0)
+                {
+                    _suppressEvents = true;
+                    _hex.SetSelection(result.Offset, result.Offset);
+                    _hex.ScrollTo(result.Offset);
+                    _suppressEvents = false;
+                }
+                else if (result.Address > 0)
+                {
+                    int offset = _core.AddressToOffset(result.Address);
+                    if (offset >= 0)
+                    {
+                        _suppressEvents = true;
+                        _hex.SetSelection(offset, offset);
+                        _hex.ScrollTo(offset);
+                        _suppressEvents = false;
+                    }
+                }
+            };
+            searchDialog.Show(_form);
         }
         
         // ---------------------------------------------------------
@@ -221,6 +388,107 @@ namespace ReverseEngineering.WinForms.MainWindow
 
             _log.Append($"Saved project: {sfd.FileName}");
             _statusFile.Text = Path.GetFileName(sfd.FileName);
+        }
+
+        // ---------------------------------------------------------
+        //  ANALYSIS MENU HANDLERS
+        // ---------------------------------------------------------
+        private void RunAnalysisClick()
+        {
+            if (_analysisController == null)
+            {
+                MessageBox.Show("Analysis controller not initialized");
+                return;
+            }
+
+            if (_core.Disassembly == null || _core.Disassembly.Count == 0)
+            {
+                MessageBox.Show("No binary loaded. Please open a binary file first.");
+                return;
+            }
+
+            _log.Append("Starting analysis...");
+            _ = _analysisController.RunAnalysisAsync();
+        }
+
+        private void ExplainInstructionClick()
+        {
+            if (_analysisController == null) return;
+
+            var selectedIndex = _disasmController.GetSelectedInstructionIndex();
+            if (selectedIndex < 0 || selectedIndex >= _core.Disassembly.Count)
+            {
+                MessageBox.Show("Please select an instruction first");
+                return;
+            }
+
+            _log.Append("Explaining instruction via LLM...");
+            _ = _analysisController.ExplainInstructionAsync(selectedIndex);
+        }
+
+        private void GeneratePseudocodeClick()
+        {
+            if (_analysisController == null) return;
+
+            var selectedAddress = _disasmController.GetSelectedInstructionAddress();
+            if (selectedAddress == 0)
+            {
+                MessageBox.Show("Please select an instruction first");
+                return;
+            }
+
+            var func = _core.FindFunctionAtAddress(selectedAddress);
+            if (func == null)
+            {
+                MessageBox.Show("No function found at selected address");
+                return;
+            }
+
+            _log.Append($"Generating pseudocode for {func.Name}...");
+            _ = _analysisController.GeneratePseudocodeAsync(func.Address);
+        }
+
+        // ---------------------------------------------------------
+        //  SETTINGS
+        // ---------------------------------------------------------
+        private void ShowSettingsDialog(object? sender, EventArgs e)
+        {
+            var settingsDialog = new Settings.SettingsDialog
+            {
+                StartPosition = FormStartPosition.CenterParent
+            };
+
+            if (settingsDialog.ShowDialog(_form) == DialogResult.OK)
+            {
+                _log.Append("Settings saved successfully");
+                // TODO: Apply theme changes immediately if user changed theme
+                var theme = SettingsManager.GetTheme();
+                // Theme will be reloaded on next application restart or via ThemeManager
+            }
+        }
+
+        // ---------------------------------------------------------
+        //  AI LOGS
+        // ---------------------------------------------------------
+        private void ShowAILogsViewer(object? sender, EventArgs e)
+        {
+            if (_aiLogsManager == null)
+            {
+                MessageBox.Show("AI logs manager not initialized");
+                return;
+            }
+
+            var viewer = new AILogsViewer(_aiLogsManager);
+            viewer.ShowDialog(_form);
+        }
+
+        // ---------------------------------------------------------
+        //  COMPATIBILITY TESTS
+        // ---------------------------------------------------------
+        private void ShowCompatibilityDialog(object? sender, EventArgs e)
+        {
+            var dialog = new Compatibility.CompatibilityTestDialog();
+            dialog.ShowDialog(_form);
         }
     }
 }

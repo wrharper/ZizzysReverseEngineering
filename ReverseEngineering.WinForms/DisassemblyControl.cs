@@ -274,5 +274,14 @@ namespace ReverseEngineering.WinForms
 
             HighlightSelectedLine(Get_selectedIndex());
         }
+
+        public ulong GetSelectedInstructionAddress()
+        {
+            if (_selectedIndex >= 0 && _selectedIndex < _instructions.Count)
+            {
+                return _instructions[_selectedIndex].Address;
+            }
+            return 0;
+        }
     }
 }

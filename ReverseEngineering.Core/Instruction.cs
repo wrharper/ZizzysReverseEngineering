@@ -1,4 +1,5 @@
 ﻿using Iced.Intel;
+using System.Collections.Generic;
 
 namespace ReverseEngineering.Core
 {
@@ -64,5 +65,74 @@ namespace ReverseEngineering.Core
         public bool IsConditionalJump { get; set; }
         public bool IsReturn { get; set; }
         public bool IsNop { get; set; }
+
+        // ---------------------------------------------------------
+        //  ANALYSIS METADATA (Phase 2)
+        // ---------------------------------------------------------
+
+        /// <summary>
+        /// Function this instruction belongs to (if any).
+        /// </summary>
+        public ulong? FunctionAddress { get; set; }
+
+        /// <summary>
+        /// Basic block this instruction belongs to.
+        /// </summary>
+        public ulong? BasicBlockAddress { get; set; }
+
+        /// <summary>
+        /// Cross-references FROM this instruction.
+        /// </summary>
+        public List<Analysis.CrossReference> XRefsFrom { get; set; } = [];
+
+        /// <summary>
+        /// Symbol name at this address (if any).
+        /// </summary>
+        public string? SymbolName { get; set; }
+
+        /// <summary>
+        /// User annotation for this instruction.
+        /// </summary>
+        public string? Annotation { get; set; }
+
+        /// <summary>
+        /// Whether this instruction has been patched.
+        /// </summary>
+        public bool IsPatched { get; set; }
+
+        // ---------------------------------------------------------
+        //  OPERAND ANALYSIS (RIP-relative, etc.)
+        // ---------------------------------------------------------
+
+        /// <summary>
+        /// If this instruction has RIP-relative addressing, the resolved address.
+        /// Used for data references, string references, etc.
+        /// </summary>
+        public ulong? RIPRelativeTarget { get; set; }
+
+        /// <summary>
+        /// Type of operand (if traceable): "Data", "String", "Import", etc.
+        /// </summary>
+        public string? OperandType { get; set; }
+
+        /// <summary>
+        /// Helper to get display string for RIP-relative target
+        /// </summary>
+        public string GetRIPRelativeDisplay()
+        {
+            if (!RIPRelativeTarget.HasValue)
+                return "";
+
+            var addr = RIPRelativeTarget.Value;
+            var label = OperandType switch
+            {
+                "String" => "string",
+                "Data" => "data",
+                "Import" => "import",
+                _ => $"0x{addr:X}"
+            };
+
+            return $"{label} @ 0x{addr:X}";
+        }
     }
 }
