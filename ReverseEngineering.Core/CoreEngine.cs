@@ -127,13 +127,31 @@ namespace ReverseEngineering.Core
             if (Disassembly.Count == 0)
                 return -1;
 
-            foreach (var ins in Disassembly)
+            // Binary search for instruction at this address (O(log n) instead of O(n))
+            int left = 0, right = Disassembly.Count - 1;
+            
+            while (left <= right)
             {
+                int mid = (left + right) / 2;
+                var ins = Disassembly[mid];
+                
                 if (ins.Address == address)
+                {
                     return ins.FileOffset;
-
-                if (address > ins.Address && address < ins.EndAddress)
-                    return ins.FileOffset + (int)(address - ins.Address);
+                }
+                else if (address < ins.Address)
+                {
+                    right = mid - 1;
+                }
+                else
+                {
+                    // address > ins.Address - check if it's within this instruction
+                    if (address < ins.EndAddress)
+                    {
+                        return ins.FileOffset + (int)(address - ins.Address);
+                    }
+                    left = mid + 1;
+                }
             }
 
             return -1;
@@ -177,14 +195,28 @@ namespace ReverseEngineering.Core
             if (Disassembly.Count == 0)
                 return -1;
 
-            for (int i = 0; i < Disassembly.Count; i++)
+            // Binary search for instruction containing this offset (O(log n) instead of O(n))
+            int left = 0, right = Disassembly.Count - 1;
+            
+            while (left <= right)
             {
-                var ins = Disassembly[i];
+                int mid = (left + right) / 2;
+                var ins = Disassembly[mid];
                 int start = ins.FileOffset;
                 int end = start + ins.Length;
-
+                
                 if (offset >= start && offset < end)
-                    return i;
+                {
+                    return mid;
+                }
+                else if (offset < start)
+                {
+                    right = mid - 1;
+                }
+                else
+                {
+                    left = mid + 1;
+                }
             }
 
             return -1;
@@ -237,16 +269,30 @@ namespace ReverseEngineering.Core
         {
             ulong address = OffsetToAddress(offset);
 
-            // Fast path
+            // Fast path: exact address match
             if (_addressToIndex.TryGetValue(address, out int idx))
                 return idx;
 
-            // Slow path: find instruction whose span contains this address
-            for (int i = 0; i < Disassembly.Count; i++)
+            // Slow path: binary search for instruction whose span contains this address
+            int left = 0, right = Disassembly.Count - 1;
+            
+            while (left <= right)
             {
-                var ins = Disassembly[i];
+                int mid = (left + right) / 2;
+                var ins = Disassembly[mid];
+                
                 if (address >= ins.Address && address < ins.EndAddress)
-                    return i;
+                {
+                    return mid;
+                }
+                else if (address < ins.Address)
+                {
+                    right = mid - 1;
+                }
+                else
+                {
+                    left = mid + 1;
+                }
             }
 
             return -1;
