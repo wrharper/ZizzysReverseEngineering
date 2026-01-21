@@ -131,7 +131,6 @@ namespace ReverseEngineering.WinForms.Utilities
         {
             int spacing = 10;
             int buttonWidth = 80;
-            int resetWidth = 120;
             
             int resetX = spacing;
             int cancelX = containerWidth - spacing - buttonWidth;

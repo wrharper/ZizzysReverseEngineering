@@ -114,7 +114,7 @@ namespace ReverseEngineering.WinForms.SymbolView
         /// <summary>
         /// Refresh tree when analysis changes.
         /// </summary>
-        public void Refresh()
+        public override void Refresh()
         {
             PopulateFromAnalysis();
         }

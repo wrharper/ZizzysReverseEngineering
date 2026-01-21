@@ -17,6 +17,7 @@ namespace ReverseEngineering.WinForms.HexEditor
         private readonly HexEditorSelection _selection;
 
         private bool _dragging;
+        private CoreEngine? _core;
 
         public event EventHandler<HexSelectionChangedEventArgs>? SelectionChanged;
 
@@ -132,6 +133,64 @@ namespace ReverseEngineering.WinForms.HexEditor
 
             UpdateScroll();
             Invalidate();
+        }
+
+        public void SetCoreEngine(CoreEngine? core)
+        {
+            _core = core;
+            _renderer.SetCoreEngine(core);
+        }
+
+        /// <summary>
+        /// Navigate to a virtual address in the hex editor.
+        /// </summary>
+        public void GoToAddress(ulong address)
+        {
+            if (_core == null || _core.Disassembly.Count == 0)
+            {
+                MessageBox.Show("Disassembly not available. Cannot navigate to address.");
+                return;
+            }
+
+            int offset = _core.AddressToOffset(address);
+            if (offset < 0)
+            {
+                MessageBox.Show("Address not found in disassembly.");
+                return;
+            }
+
+            // Calculate scroll position
+            int row = offset / HexEditorState.BytesPerRow;
+            int scrollY = row * _state.LineHeight;
+
+            // Clamp to valid range
+            int maxScroll = _scroll.Maximum - _scroll.LargeChange;
+            if (scrollY > maxScroll)
+                scrollY = maxScroll;
+
+            _scroll.Value = scrollY;
+            _state.ScrollOffsetY = scrollY;
+
+            // Set caret and selection
+            _state.CaretIndex = offset;
+            _selection.SetSelection(offset, offset);
+            RaiseSelectionChanged();
+            Invalidate();
+        }
+
+        /// <summary>
+        /// Show Go To Address dialog and navigate.
+        /// </summary>
+        public void ShowGoToDialog()
+        {
+            using var dialog = new GoToAddressDialog(_core != null && _state.CaretIndex >= 0 
+                ? _core.OffsetToAddress(_state.CaretIndex) 
+                : 0);
+
+            if (dialog.ShowDialog() == DialogResult.OK)
+            {
+                GoToAddress(dialog.Address);
+            }
         }
 
         /// <summary>

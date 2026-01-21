@@ -171,10 +171,10 @@ namespace ReverseEngineering.WinForms.GraphView
             while (queue.Count > 0)
             {
                 var addr = queue.Dequeue();
-                if (_cfg.Blocks.TryGetValue(addr, out var block))
+                if (_cfg?.Blocks.TryGetValue(addr, out var block) ?? false)
                 {
                     var currentLevel = levels[addr];
-                    foreach (var succ in block.Successors)
+                    foreach (var succ in block.Successors ?? [])
                     {
                         if (!levels.ContainsKey(succ))
                         {

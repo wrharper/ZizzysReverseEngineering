@@ -10,12 +10,18 @@ namespace ReverseEngineering.WinForms.HexEditor
         private readonly HexEditorState _s;
         private readonly HexEditorSelection _sel;
         private readonly HexEditorControl _owner;
+        private CoreEngine? _core;
 
         public HexEditorRenderer(HexEditorState state, HexEditorSelection selection, HexEditorControl owner)
         {
             _s = state;
             _sel = selection;
             _owner = owner;
+        }
+
+        public void SetCoreEngine(CoreEngine? core)
+        {
+            _core = core;
         }
 
         public void Paint(Graphics g, Rectangle clip)
@@ -49,11 +55,23 @@ namespace ReverseEngineering.WinForms.HexEditor
 
         private void DrawOffset(Graphics g, int offset, int y)
         {
-            // Convert file offset to virtual address using ImageBase
-            ulong virtualAddress = _s.ImageBase + (ulong)offset;
+            // Convert file offset to virtual address
+            ulong virtualAddress;
+            
+            if (_core != null && _core.Disassembly.Count > 0)
+            {
+                // Use CoreEngine to properly map offset to address via disassembly
+                virtualAddress = _core.OffsetToAddress(offset);
+            }
+            else
+            {
+                // Fallback: linear mapping if no disassembly yet
+                virtualAddress = _s.ImageBase + (ulong)offset;
+            }
+            
             string text = virtualAddress.ToString("X16");
-            g.DrawString(text, _owner.Font, HexEditorTheme.OffsetBrush,
-                new PointF(0, y));
+            var brush = HexEditorTheme.OffsetBrush ?? Brushes.Black;
+            g.DrawString(text, _owner.Font, brush, new PointF(0, y));
         }
 
         private void DrawHexBytes(Graphics g, int start, int end, int y)
@@ -67,10 +85,10 @@ namespace ReverseEngineering.WinForms.HexEditor
                 bool selected = (selStart >= 0 && i >= selStart && i <= selEnd);
                 bool modified = _s.Buffer!.Modified[i];
 
-                Brush fg = selected ? HexEditorTheme.SelectionForeBrush : HexEditorTheme.FgBrush;
-                Brush bg = selected ? HexEditorTheme.SelectionBackBrush :
-                           modified ? HexEditorTheme.ModifiedBackBrush :
-                           HexEditorTheme.BgBrush;
+                Brush fg = selected ? (HexEditorTheme.SelectionForeBrush ?? Brushes.White) : (HexEditorTheme.FgBrush ?? Brushes.Black);
+                Brush bg = selected ? (HexEditorTheme.SelectionBackBrush ?? Brushes.Blue) :
+                           modified ? (HexEditorTheme.ModifiedBackBrush ?? Brushes.Yellow) :
+                           (HexEditorTheme.BgBrush ?? Brushes.White);
 
                 string hex = _s.Buffer.Bytes[i].ToString("X2");
 
@@ -92,10 +110,10 @@ namespace ReverseEngineering.WinForms.HexEditor
                 bool selected = (selStart >= 0 && i >= selStart && i <= selEnd);
                 bool modified = _s.Buffer!.Modified[i];
 
-                Brush fg = selected ? HexEditorTheme.SelectionForeBrush : HexEditorTheme.AsciiBrush;
-                Brush bg = selected ? HexEditorTheme.SelectionBackBrush :
-                           modified ? HexEditorTheme.ModifiedBackBrush :
-                           HexEditorTheme.BgBrush;
+                Brush fg = selected ? (HexEditorTheme.SelectionForeBrush ?? Brushes.White) : (HexEditorTheme.AsciiBrush ?? Brushes.Black);
+                Brush bg = selected ? (HexEditorTheme.SelectionBackBrush ?? Brushes.Blue) :
+                           modified ? (HexEditorTheme.ModifiedBackBrush ?? Brushes.Yellow) :
+                           (HexEditorTheme.BgBrush ?? Brushes.White);
 
                 byte b = _s.Buffer.Bytes[i];
                 char c = (b >= 32 && b <= 126) ? (char)b : '.';
@@ -119,7 +137,8 @@ namespace ReverseEngineering.WinForms.HexEditor
             int caretCol = _s.CaretIndex % HexEditorState.BytesPerRow;
             int x = _s.OffsetColumnWidth + caretCol * (_s.CharWidth * 3);
 
-            g.DrawLine(HexEditorTheme.SeparatorPen, x, y, x, y + _s.LineHeight);
+            var pen = HexEditorTheme.SeparatorPen ?? Pens.Gray;
+            g.DrawLine(pen, x, y, x, y + _s.LineHeight);
         }
     }
 }

@@ -37,6 +37,7 @@ namespace ReverseEngineering.Core
         public Dictionary<ulong, Symbol> Symbols { get; private set; } = [];
         public List<PatternMatch> Strings { get; private set; } = [];
         public bool AnalysisInProgress { get; private set; }
+        public bool DisassemblyComplete { get; private set; }
 
         /// <summary>
         /// Progress callback for disassembly: (processed, total)
@@ -49,6 +50,9 @@ namespace ReverseEngineering.Core
         {
             if (!File.Exists(path))
                 throw new FileNotFoundException("Binary not found", path);
+
+            // Reset completion flag for new binary
+            DisassemblyComplete = false;
 
             // Report initial progress (file read)
             OnDisassemblyProgress?.Invoke(0, 100);
@@ -98,6 +102,9 @@ namespace ReverseEngineering.Core
 
             // Report completion (100%)
             OnDisassemblyProgress?.Invoke(100, 100);
+
+            // Mark disassembly as complete
+            DisassemblyComplete = true;
         }
 
         // ---------------------------------------------------------
@@ -134,6 +141,18 @@ namespace ReverseEngineering.Core
 
         public ulong OffsetToAddress(int offset)
         {
+            // Search disassembly for instruction at this offset
+            foreach (var ins in Disassembly)
+            {
+                if (ins.FileOffset == offset)
+                    return ins.Address;
+                
+                // If offset is within this instruction, return the instruction address
+                if (ins.FileOffset < offset && offset < ins.FileOffset + ins.Length)
+                    return ins.Address + (ulong)(offset - ins.FileOffset);
+            }
+            
+            // Fallback: if no instruction found, use linear mapping (shouldn't happen for valid offsets)
             return ImageBase + (ulong)offset;
         }
 
@@ -304,6 +323,12 @@ namespace ReverseEngineering.Core
         {
             if (Disassembly.Count == 0)
                 return;
+
+            // Warn if running analysis on partial disassembly
+            if (!DisassemblyComplete)
+            {
+                Logger.Info("Analysis", "⚠️ Running analysis on PARTIAL disassembly. Results will be incomplete until full disassembly completes.");
+            }
 
             AnalysisInProgress = true;
             var sw = System.Diagnostics.Stopwatch.StartNew();
