@@ -65,7 +65,8 @@ namespace ReverseEngineering.WinForms
                 _analysisController,
                 null,
                 peInfoControl,
-                llmPane
+                llmPane,
+                debugLogControl
             );
 
             _themeController = new ThemeMenuController(
@@ -114,6 +115,7 @@ namespace ReverseEngineering.WinForms
             var leftTabs = new TabControl { Dock = DockStyle.Fill };
             hexEditor.Dock = DockStyle.Fill;
             disasmView.Dock = DockStyle.Fill;
+            debugLogControl.Dock = DockStyle.Fill;
             
             var hexPage = new TabPage("Hex Editor");
             hexPage.Controls.Add(hexEditor);
@@ -122,6 +124,10 @@ namespace ReverseEngineering.WinForms
             var disasmPage = new TabPage("Disassembly");
             disasmPage.Controls.Add(disasmView);
             leftTabs.TabPages.Add(disasmPage);
+
+            var debugPage = new TabPage("Debug Log");
+            debugPage.Controls.Add(debugLogControl);
+            leftTabs.TabPages.Add(debugPage);
 
             var leftPanel = new Panel { Dock = DockStyle.Fill };
             leftPanel.Controls.Add(leftTabs);

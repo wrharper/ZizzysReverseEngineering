@@ -11,6 +11,7 @@ using ReverseEngineering.WinForms.HexEditor;
 using ReverseEngineering.WinForms.LLM;
 using ReverseEngineering.WinForms.AILogs;
 using ReverseEngineering.WinForms.Compatibility;
+using ReverseEngineering.WinForms.Debug;
 using ReverseEngineering.WinForms;
 
 namespace ReverseEngineering.WinForms.MainWindow
@@ -25,6 +26,7 @@ namespace ReverseEngineering.WinForms.MainWindow
         private readonly CoreEngine _core;
         private readonly PEInfoControl? _peInfoControl;
         private readonly LLMPane? _llmPane;
+        private readonly DebugLogControl? _debugLog;
 
         private readonly DisassemblyController _disasmController;
         private readonly AnalysisController? _analysisController;
@@ -44,7 +46,8 @@ namespace ReverseEngineering.WinForms.MainWindow
             AnalysisController? analysisController = null,
             AILogsManager? aiLogsManager = null,
             PEInfoControl? peInfoControl = null,
-            LLMPane? llmPane = null)
+            LLMPane? llmPane = null,
+            DebugLogControl? debugLog = null)
         {
             _form = form;
             _menu = menu;
@@ -57,6 +60,13 @@ namespace ReverseEngineering.WinForms.MainWindow
             _aiLogsManager = aiLogsManager ?? new AILogsManager();
             _peInfoControl = peInfoControl;
             _llmPane = llmPane;
+            _debugLog = debugLog;
+
+            // Set hex editor reference for crash navigation
+            if (_debugLog != null)
+            {
+                _debugLog.SetHexEditor(hex);
+            }
 
             BuildMenu();
 
@@ -109,6 +119,10 @@ namespace ReverseEngineering.WinForms.MainWindow
             var goToAddressItem = new ToolStripMenuItem("Go to Address...", null, GoToAddressClick);
             goToAddressItem.ShortcutKeys = Keys.Control | Keys.G;
             navigate.DropDownItems.Add(goToAddressItem);
+
+            navigate.DropDownItems.Add(new ToolStripSeparator());
+            navigate.DropDownItems.Add(new ToolStripMenuItem("Go to File Offset", null, GoToFileOffset));
+            navigate.DropDownItems.Add(new ToolStripMenuItem("Go to Virtual Address", null, GoToVirtualAddress));
 
             _menu.Items.Add(navigate);
 
@@ -163,6 +177,14 @@ namespace ReverseEngineering.WinForms.MainWindow
             tools.DropDownItems.Add(compatItem);
 
             _menu.Items.Add(tools);
+
+            // Debug menu
+            var debug = new ToolStripMenuItem("Debug");
+            debug.DropDownItems.Add(new ToolStripMenuItem("Run Binary", null, RunBinary));
+            debug.DropDownItems.Add(new ToolStripMenuItem("Debug with WinDbg", null, DebugWithWinDbg));
+            debug.DropDownItems.Add(new ToolStripMenuItem("Debug with x64dbg", null, DebugWithX64dbg));
+
+            _menu.Items.Add(debug);
 
             // Subscribe to undo/redo changes to update menu
             _core.UndoRedo.HistoryChanged += UpdateUndoRedoMenu;
@@ -690,5 +712,121 @@ namespace ReverseEngineering.WinForms.MainWindow
             var dialog = new Compatibility.CompatibilityTestDialog();
             dialog.ShowDialog(_form);
         }
+
+        // ---------------------------------------------------------
+        //  DEBUGGING
+        // ---------------------------------------------------------
+        private async void RunBinary(object? sender, EventArgs e)
+        {
+            if (_debugLog == null)
+            {
+                MessageBox.Show(_form, "Debug log control not initialized.", "Debug", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (_core.HexBuffer == null || string.IsNullOrEmpty(_core.HexBuffer.FilePath))
+            {
+                MessageBox.Show(_form, "No binary loaded.", "Debug", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            // Use Windows Debugger API for detailed crash information
+            await _debugLog.RunBinaryWithDebuggerAsync(_core.HexBuffer.FilePath, _core);
+        }
+
+        private void DebugWithWinDbg(object? sender, EventArgs e)
+        {
+            if (_debugLog == null)
+            {
+                MessageBox.Show(_form, "Debug log control not initialized.", "Debug", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (_core.HexBuffer == null || string.IsNullOrEmpty(_core.HexBuffer.FilePath))
+            {
+                MessageBox.Show(_form, "No binary loaded.", "Debug", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            // Try to find WinDbg
+            string[] winDbgPaths = new[]
+            {
+                @"C:\Program Files\Debugging Tools for Windows (x64)\windbg.exe",
+                @"C:\Program Files (x86)\Debugging Tools for Windows (x86)\windbg.exe",
+                @"C:\Windows\System32\windbg.exe"
+            };
+
+            string? winDbgPath = winDbgPaths.FirstOrDefault(p => File.Exists(p));
+            
+            if (winDbgPath != null)
+            {
+                _debugLog.LaunchDebugger(winDbgPath, _core.HexBuffer.FilePath);
+            }
+            else
+            {
+                MessageBox.Show(_form, "WinDbg not found. Please install Windows Debugger.", "Debug", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private void DebugWithX64dbg(object? sender, EventArgs e)
+        {
+            if (_debugLog == null)
+            {
+                MessageBox.Show(_form, "Debug log control not initialized.", "Debug", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (_core.HexBuffer == null || string.IsNullOrEmpty(_core.HexBuffer.FilePath))
+            {
+                MessageBox.Show(_form, "No binary loaded.", "Debug", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            // Try to find x64dbg
+            string[] x64dbgPaths = new[]
+            {
+                @"C:\Program Files\x64dbg\release\x64dbg.exe",
+                @"C:\Program Files\x64dbg\release\x32dbg.exe",
+            };
+
+            bool is64Bit = _core.Is64Bit;
+            string? x64dbgPath = (is64Bit 
+                ? x64dbgPaths[0]  // x64dbg for 64-bit
+                : x64dbgPaths[1]); // x32dbg for 32-bit
+
+            if (File.Exists(x64dbgPath))
+            {
+                _debugLog.LaunchDebugger(x64dbgPath, _core.HexBuffer.FilePath);
+            }
+            else
+            {
+                MessageBox.Show(_form, "x64dbg not found. Please install x64dbg from https://x64dbg.com", "Debug", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private void GoToFileOffset(object? sender, EventArgs e)
+        {
+            using (var dialog = new GoToAddressDialog(0, isVirtual: false))
+            {
+                if (dialog.ShowDialog(_form) == DialogResult.OK)
+                {
+                    _hex.GoToFileOffset((int)dialog.Address);
+                }
+            }
+        }
+
+        private void GoToVirtualAddress(object? sender, EventArgs e)
+        {
+            using (var dialog = new GoToAddressDialog(
+                _debugLog?.GetLastCrashVirtualAddress() ?? 0,
+                isVirtual: true))
+            {
+                if (dialog.ShowDialog(_form) == DialogResult.OK)
+                {
+                    _hex.GoToAddress(dialog.Address);
+                }
+            }
+        }
     }
 }
+

@@ -197,6 +197,39 @@ namespace ReverseEngineering.WinForms.HexEditor
         }
 
         /// <summary>
+        /// <summary>
+        /// Navigate directly to a file offset in the hex editor.
+        /// This bypasses any virtual address conversion - useful when you need to navigate
+        /// by file offset even when disassembly is loaded and displaying virtual addresses.
+        /// </summary>
+        public void GoToFileOffset(int offset)
+        {
+            if (_state.Buffer == null || offset < 0 || offset >= _state.Buffer.Bytes.Length)
+            {
+                MessageBox.Show($"File offset 0x{offset:X} is out of range. Binary size: 0x{_state.Buffer?.Bytes.Length:X}");
+                return;
+            }
+
+            // Calculate scroll position
+            int row = offset / HexEditorState.BytesPerRow;
+            int scrollY = row * _state.LineHeight;
+
+            // Clamp to valid range
+            int maxScroll = _scroll.Maximum - _scroll.LargeChange;
+            if (scrollY > maxScroll)
+                scrollY = maxScroll;
+
+            _scroll.Value = scrollY;
+            _state.ScrollOffsetY = scrollY;
+
+            // Set caret and selection
+            _state.CaretIndex = offset;
+            _selection.SetSelection(offset, offset);
+            RaiseSelectionChanged();
+            Invalidate();
+        }
+
+        /// <summary>
         /// Show Go To Address dialog and navigate.
         /// Dialog changes hint based on disassembly availability.
         /// </summary>

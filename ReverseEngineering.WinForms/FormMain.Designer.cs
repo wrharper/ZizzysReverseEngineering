@@ -23,6 +23,7 @@ namespace ReverseEngineering.WinForms
         private DisassemblyViewerVirtual disasmView;
         private PatchPanel patchPanel;
         private LogControl logControl;
+        private DebugLogControl debugLogControl;
         private SymbolTreeControl symbolTree;
         private GraphControl graphControl;
         private LLMPane llmPane;
@@ -43,6 +44,7 @@ namespace ReverseEngineering.WinForms
             this.disasmView = new DisassemblyViewerVirtual();
             this.patchPanel = new PatchPanel();
             this.logControl = new LogControl();
+            this.debugLogControl = new DebugLogControl();
             this.symbolTree = null!;  // Will be initialized in FormMain.cs after CoreEngine is ready
             this.graphControl = null!;  // Will be initialized in FormMain.cs after CoreEngine is ready
             this.llmPane = new LLMPane();

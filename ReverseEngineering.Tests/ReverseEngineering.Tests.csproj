@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ReverseEngineering.Core\ReverseEngineering.Core.csproj" />
+    <ProjectReference Include="..\ReverseEngineering.WinForms\ReverseEngineering.WinForms.csproj" />
   </ItemGroup>
 
 </Project>
