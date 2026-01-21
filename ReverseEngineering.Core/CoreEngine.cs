@@ -13,6 +13,7 @@ namespace ReverseEngineering.Core
         public bool Is64Bit { get; private set; }
         public HexBuffer HexBuffer { get; private set; } = new HexBuffer([]);
         public List<Instruction> Disassembly { get; private set; } = [];
+        public PEHeaderExtractor.PEInfo? PEInfo { get; private set; }
 
         private PatchEngine? _patchEngine;
 
@@ -34,6 +35,7 @@ namespace ReverseEngineering.Core
         public List<Function> Functions { get; private set; } = [];
         public Dictionary<ulong, List<CrossReference>> CrossReferences { get; private set; } = [];
         public Dictionary<ulong, Symbol> Symbols { get; private set; } = [];
+        public List<PatternMatch> Strings { get; private set; } = [];
         public bool AnalysisInProgress { get; private set; }
 
         // ---------------------------------------------------------
@@ -48,6 +50,9 @@ namespace ReverseEngineering.Core
 
             // Detect PE32 vs PE32+
             Is64Bit = DetectBitness(bytes);
+
+            // Extract PE header info
+            PEInfo = PEHeaderExtractor.Extract(bytes);
 
             // Create buffer
             HexBuffer = new HexBuffer(bytes, path);
@@ -268,27 +273,62 @@ namespace ReverseEngineering.Core
                 return;
 
             AnalysisInProgress = true;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
 
             try
             {
                 // Step 1: Find functions
+                Logger.Info("Analysis", "Step 1/6: Finding functions...");
                 Functions = FunctionFinder.FindFunctions(Disassembly, this);
+                Logger.Info("Analysis", $"✓ Found {Functions.Count} functions ({sw.ElapsedMilliseconds}ms)");
 
                 // Step 2: Build CFG from entry point
+                Logger.Info("Analysis", "Step 2/6: Building control flow graph...");
                 if (Disassembly.Count > 0)
                 {
                     var entryPoint = Disassembly[0].Address;
                     CFG = BasicBlockBuilder.BuildCFG(Disassembly, entryPoint);
+                    if (CFG != null)
+                        Logger.Debug("Analysis", $"  Main CFG: {CFG.Blocks.Count} blocks");
                 }
+                Logger.Info("Analysis", $"✓ Built CFG ({sw.ElapsedMilliseconds}ms)");
 
                 // Step 3: Find cross-references
+                Logger.Info("Analysis", "Step 3/6: Finding cross-references...");
                 CrossReferences = CrossReferenceEngine.BuildXRefs(Disassembly, ImageBase);
+                Logger.Info("Analysis", $"✓ Found {CrossReferences.Count} cross-reference locations ({sw.ElapsedMilliseconds}ms)");
 
                 // Step 4: Resolve symbols
+                Logger.Info("Analysis", "Step 4/6: Resolving symbols...");
                 Symbols = SymbolResolver.ResolveSymbols(Disassembly, this);
+                Logger.Info("Analysis", $"✓ Resolved {Symbols.Count} symbols ({sw.ElapsedMilliseconds}ms)");
 
-                // Step 5: Annotate instructions with metadata
+                // Step 5: Extract strings from binary
+                Logger.Info("Analysis", "Step 5/6: Extracting strings...");
+                var rawStrings = PatternMatcher.FindStrings(HexBuffer.Bytes, minLength: 3);
+                Logger.Info("Analysis", $"Found {rawStrings.Count} raw strings");
+                // Convert file offsets to virtual addresses
+                Strings = rawStrings.Select(s =>
+                {
+                    // For now, use file offset + ImageBase as approximation
+                    // In a full PE parser, would convert via section headers
+                    return new PatternMatch
+                    {
+                        Address = ImageBase + (ulong)s.Offset,
+                        Offset = s.Offset,
+                        MatchedBytes = s.MatchedBytes,
+                        Description = s.Description
+                    };
+                }).ToList();
+                Logger.Info("Analysis", $"✓ Extracted {Strings.Count} strings ({sw.ElapsedMilliseconds}ms)");
+
+                // Step 6: Annotate instructions with metadata
+                Logger.Info("Analysis", "Step 6/6: Annotating instructions...");
                 AnnotateInstructions();
+                Logger.Info("Analysis", $"✓ Annotated instructions ({sw.ElapsedMilliseconds}ms)");
+
+                sw.Stop();
+                Logger.Info("Analysis", $"✅ Analysis complete in {sw.ElapsedMilliseconds}ms");
             }
             finally
             {

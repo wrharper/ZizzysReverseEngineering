@@ -22,7 +22,7 @@ namespace ReverseEngineering.Core.LLM
         public float Temperature { get; set; } = 0.7f;
         public float TopP { get; set; } = 0.9f;
 
-        public LocalLLMClient(string baseUrl = "http://localhost:1234", int timeoutSeconds = 30)
+        public LocalLLMClient(string baseUrl = "http://127.0.0.1:1234", int timeoutSeconds = 300)
         {
             _baseUrl = baseUrl.TrimEnd('/');
             _timeoutSeconds = timeoutSeconds;

@@ -7,6 +7,7 @@ using ReverseEngineering.Core.AILogs;
 using ReverseEngineering.Core.LLM;
 using ReverseEngineering.WinForms.GraphView;
 using ReverseEngineering.WinForms.SymbolView;
+using ReverseEngineering.WinForms.StringView;
 using ReverseEngineering.WinForms.LLM;
 
 namespace ReverseEngineering.WinForms.MainWindow
@@ -20,6 +21,7 @@ namespace ReverseEngineering.WinForms.MainWindow
         private readonly CoreEngine _core;
         private readonly SymbolTreeControl? _symbolTree;
         private readonly GraphControl? _graphControl;
+        private readonly StringsControl? _stringsControl;
         private readonly LocalLLMClient? _llmClient;
         private readonly LLMPane? _llmPane;
         private readonly LLMAnalyzer? _llmAnalyzer;
@@ -35,15 +37,34 @@ namespace ReverseEngineering.WinForms.MainWindow
             GraphControl? graphControl = null,
             LocalLLMClient? llmClient = null,
             LLMPane? llmPane = null,
-            AILogsManager? aiLogs = null)
+            AILogsManager? aiLogs = null,
+            StringsControl? stringsControl = null)
         {
             _core = core ?? throw new ArgumentNullException(nameof(core));
             _symbolTree = symbolTree;
             _graphControl = graphControl;
+            _stringsControl = stringsControl;
             _llmClient = llmClient;
             _llmPane = llmPane;
-            _llmAnalyzer = llmClient != null ? new LLMAnalyzer(llmClient) : null;
+            _llmAnalyzer = llmClient != null ? new LLMAnalyzer(llmClient, core) : null;
             _aiLogs = aiLogs;
+
+            // Wire up LLM chat interface
+            if (_llmPane != null)
+            {
+                _llmPane.UserQuery += OnUserLLMQuery;
+            }
+        }
+
+        // ---------------------------------------------------------
+        //  LLM CHAT EVENT HANDLER
+        // ---------------------------------------------------------
+        private async void OnUserLLMQuery(object? sender, QueryEventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(e.Query))
+                return;
+
+            await QueryLLMAsync(e.Query);
         }
 
         // ---------------------------------------------------------
@@ -67,13 +88,15 @@ namespace ReverseEngineering.WinForms.MainWindow
                 // Update UI
                 if (!token.IsCancellationRequested)
                 {
+                    Logger.Info("UI", "Updating views...");
                     UpdateViews();
+                    Logger.Info("UI", "✓ Views updated and displayed");
                     AnalysisCompleted?.Invoke();
                 }
             }
             catch (OperationCanceledException)
             {
-                // Analysis was cancelled
+                Logger.Warning("Analysis", "Analysis was cancelled");
             }
             catch (Exception ex)
             {
@@ -96,6 +119,7 @@ namespace ReverseEngineering.WinForms.MainWindow
         {
             UpdateSymbolTree();
             UpdateGraphView();
+            UpdateStringsView();
         }
 
         private void UpdateSymbolTree()
@@ -106,6 +130,7 @@ namespace ReverseEngineering.WinForms.MainWindow
             try
             {
                 _symbolTree.PopulateFromAnalysis();
+                Logger.Info("UI", $"  → Symbol Tree: {_core.Symbols.Count} symbols");
             }
             catch (Exception ex)
             {
@@ -113,18 +138,50 @@ namespace ReverseEngineering.WinForms.MainWindow
             }
         }
 
-        private void UpdateGraphView()
+        private void UpdateStringsView()
         {
-            if (_graphControl == null || _core.CFG == null)
+            if (_stringsControl == null)
                 return;
 
             try
             {
-                _graphControl.DisplayCFG(_core.CFG);
+                _stringsControl.PopulateFromAnalysis();
+                Logger.Info("UI", $"  → Strings: {_core.Strings.Count} strings");
             }
             catch (Exception ex)
             {
-                Logger.Error("AnalysisController", "Failed to update graph view", ex);
+                Logger.Error("AnalysisController", "Failed to update strings view", ex);
+            }
+        }
+
+        private void UpdateGraphView()
+        {
+            if (_graphControl == null)
+            {
+                Logger.Debug("UI", "GraphControl is null");
+                return;
+            }
+            
+            if (_core.CFG == null)
+            {
+                Logger.Debug("UI", "CFG is null");
+                return;
+            }
+            
+            if (_core.CFG.Blocks.Count == 0)
+            {
+                Logger.Debug("UI", "CFG has no blocks");
+                return;
+            }
+
+            try
+            {
+                _graphControl.DisplayCFG(_core.CFG);
+                Logger.Info("UI", $"  → CFG: {_core.CFG.Blocks.Count} blocks, {_core.Functions.Count} functions");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("AnalysisController", "Failed to update graph", ex);
             }
         }
 
@@ -144,29 +201,23 @@ namespace ReverseEngineering.WinForms.MainWindow
         }
 
         // ---------------------------------------------------------
-        //  LLM ANALYSIS (LM Studio Integration)
+        //  LLM CHAT (Interactive RE Analysis - Master Level Tool)
         // ---------------------------------------------------------
         /// <summary>
-        /// Explain a single instruction using LM Studio.
+        /// Send a user query to the LLM with full binary context.
+        /// The LLM can read the binary and make patches upon request.
         /// </summary>
-        public async Task ExplainInstructionAsync(int instructionIndex, CancellationToken cancellationToken = default)
+        public async Task QueryLLMAsync(string userQuery, CancellationToken cancellationToken = default)
         {
             if (_llmPane == null || _llmAnalyzer == null)
                 return;
 
-            if (instructionIndex < 0 || instructionIndex >= _core.Disassembly.Count)
-                return;
-
-            var instruction = _core.Disassembly[instructionIndex];
             var timer = Stopwatch.StartNew();
-
-            _llmPane.SetAnalyzing($"Explaining {instruction.Mnemonic}");
+            _llmPane.SetAnalyzing("Analyzing...");
 
             try
             {
-                var prompt = $"Explain this x86-64 instruction: {instruction.Mnemonic} {instruction.Operands}";
-                var explanation = await _llmAnalyzer.ExplainInstructionAsync(instruction, cancellationToken);
-                
+                var response = await _llmAnalyzer.QueryWithContextAsync(userQuery, cancellationToken);
                 timer.Stop();
 
                 // Log operation
@@ -174,16 +225,16 @@ namespace ReverseEngineering.WinForms.MainWindow
                 {
                     var logEntry = new AILogEntry
                     {
-                        Operation = "InstructionExplanation",
-                        Prompt = prompt,
-                        AIOutput = explanation,
+                        Operation = "LLMChat",
+                        Prompt = userQuery,
+                        AIOutput = response,
                         Status = "Success",
                         DurationMs = timer.ElapsedMilliseconds
                     };
                     _aiLogs.SaveLogEntry(logEntry);
                 }
 
-                _llmPane.DisplayResult("Instruction Explanation", explanation);
+                _llmPane.DisplayResponse(response);
             }
             catch (Exception ex)
             {
@@ -194,8 +245,8 @@ namespace ReverseEngineering.WinForms.MainWindow
                 {
                     var logEntry = new AILogEntry
                     {
-                        Operation = "InstructionExplanation",
-                        Prompt = $"Explain instruction at {instruction.Address:X8}",
+                        Operation = "LLMChat",
+                        Prompt = userQuery,
                         AIOutput = $"Error: {ex.Message}",
                         Status = "Error",
                         DurationMs = timer.ElapsedMilliseconds
@@ -203,220 +254,8 @@ namespace ReverseEngineering.WinForms.MainWindow
                     _aiLogs.SaveLogEntry(logEntry);
                 }
 
-                _llmPane.DisplayError($"Failed to explain instruction: {ex.Message}");
+                _llmPane.DisplayError($"Error: {ex.Message}");
             }
         }
-
-        /// <summary>
-        /// Generate pseudocode for a function using LM Studio.
-        /// </summary>
-        public async Task GeneratePseudocodeAsync(ulong functionAddress, CancellationToken cancellationToken = default)
-        {
-            if (_llmPane == null || _llmAnalyzer == null)
-                return;
-
-            var func = _core.FindFunctionAtAddress(functionAddress);
-            if (func == null)
-            {
-                _llmPane.DisplayError("Function not found");
-                return;
-            }
-
-            var timer = Stopwatch.StartNew();
-            _llmPane.SetAnalyzing($"Generating pseudocode for {func.Name}");
-
-            try
-            {
-                // Get first 20 instructions of function for analysis
-                var startIdx = _core.OffsetToInstructionIndex(_core.AddressToOffset(functionAddress));
-                if (startIdx < 0) return;
-
-                var instructions = _core.Disassembly.GetRange(startIdx, Math.Min(20, _core.Disassembly.Count - startIdx));
-                var pseudocode = await _llmAnalyzer.GeneratePseudocodeAsync(instructions, functionAddress, cancellationToken);
-                
-                timer.Stop();
-
-                // Log operation
-                if (_aiLogs != null)
-                {
-                    var prompt = $"Generate pseudocode for {func.Name} (0x{functionAddress:X8})";
-                    var logEntry = new AILogEntry
-                    {
-                        Operation = "PseudocodeGeneration",
-                        Prompt = prompt,
-                        AIOutput = pseudocode,
-                        Status = "Success",
-                        DurationMs = timer.ElapsedMilliseconds
-                    };
-                    _aiLogs.SaveLogEntry(logEntry);
-                }
-
-                _llmPane.DisplayResult($"Pseudocode: {func.Name}", pseudocode);
-            }
-            catch (Exception ex)
-            {
-                timer.Stop();
-
-                // Log failure
-                if (_aiLogs != null)
-                {
-                    var logEntry = new AILogEntry
-                    {
-                        Operation = "PseudocodeGeneration",
-                        Prompt = $"Generate pseudocode for {func.Name}",
-                        AIOutput = $"Error: {ex.Message}",
-                        Status = "Error",
-                        DurationMs = timer.ElapsedMilliseconds
-                    };
-                    _aiLogs.SaveLogEntry(logEntry);
-                }
-
-                _llmPane.DisplayError($"Failed to generate pseudocode: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Identify function signature using LM Studio.
-        /// </summary>
-        public async Task IdentifyFunctionSignatureAsync(ulong functionAddress, CancellationToken cancellationToken = default)
-        {
-            if (_llmPane == null || _llmAnalyzer == null)
-                return;
-
-            var func = _core.FindFunctionAtAddress(functionAddress);
-            if (func == null)
-            {
-                _llmPane.DisplayError("Function not found");
-                return;
-            }
-
-            var timer = Stopwatch.StartNew();
-            _llmPane.SetAnalyzing($"Analyzing signature for {func.Name}");
-
-            try
-            {
-                var startIdx = _core.OffsetToInstructionIndex(_core.AddressToOffset(functionAddress));
-                if (startIdx < 0) return;
-
-                var instructions = _core.Disassembly.GetRange(startIdx, Math.Min(10, _core.Disassembly.Count - startIdx));
-                var signature = await _llmAnalyzer.IdentifyFunctionSignatureAsync(instructions, functionAddress, cancellationToken);
-                
-                timer.Stop();
-
-                // Log operation
-                if (_aiLogs != null)
-                {
-                    var prompt = $"Identify function signature for {func.Name} (0x{functionAddress:X8})";
-                    var logEntry = new AILogEntry
-                    {
-                        Operation = "FunctionSignatureIdentification",
-                        Prompt = prompt,
-                        AIOutput = signature,
-                        Status = "Success",
-                        DurationMs = timer.ElapsedMilliseconds
-                    };
-                    _aiLogs.SaveLogEntry(logEntry);
-                }
-
-                _llmPane.DisplayResult($"Function Signature: {func.Name}", signature);
-            }
-            catch (Exception ex)
-            {
-                timer.Stop();
-
-                // Log failure
-                if (_aiLogs != null)
-                {
-                    var logEntry = new AILogEntry
-                    {
-                        Operation = "FunctionSignatureIdentification",
-                        Prompt = $"Identify signature for {func.Name}",
-                        AIOutput = $"Error: {ex.Message}",
-                        Status = "Error",
-                        DurationMs = timer.ElapsedMilliseconds
-                    };
-                    _aiLogs.SaveLogEntry(logEntry);
-                }
-
-                _llmPane.DisplayError($"Failed to identify signature: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Detect patterns in a function using LM Studio.
-        /// </summary>
-        public async Task DetectPatternAsync(ulong functionAddress, CancellationToken cancellationToken = default)
-        {
-            if (_llmPane == null || _llmAnalyzer == null)
-                return;
-
-            var func = _core.FindFunctionAtAddress(functionAddress);
-            if (func == null)
-            {
-                _llmPane.DisplayError("Function not found");
-                return;
-            }
-
-            var timer = Stopwatch.StartNew();
-            _llmPane.SetAnalyzing($"Detecting patterns in {func.Name}");
-
-            try
-            {
-                var startIdx = _core.OffsetToInstructionIndex(_core.AddressToOffset(functionAddress));
-                if (startIdx < 0) return;
-
-                var instructions = _core.Disassembly.GetRange(startIdx, Math.Min(30, _core.Disassembly.Count - startIdx));
-                var pattern = await _llmAnalyzer.DetectPatternAsync(instructions, functionAddress, cancellationToken);
-                
-                timer.Stop();
-
-                // Log operation
-                if (_aiLogs != null)
-                {
-                    var prompt = $"Detect patterns in {func.Name} (0x{functionAddress:X8})";
-                    var logEntry = new AILogEntry
-                    {
-                        Operation = "PatternDetection",
-                        Prompt = prompt,
-                        AIOutput = pattern,
-                        Status = "Success",
-                        DurationMs = timer.ElapsedMilliseconds
-                    };
-                    _aiLogs.SaveLogEntry(logEntry);
-                }
-
-                _llmPane.DisplayResult($"Detected Patterns: {func.Name}", pattern);
-            }
-            catch (Exception ex)
-            {
-                timer.Stop();
-
-                // Log failure
-                if (_aiLogs != null)
-                {
-                    var logEntry = new AILogEntry
-                    {
-                        Operation = "PatternDetection",
-                        Prompt = $"Detect patterns in {func.Name}",
-                        AIOutput = $"Error: {ex.Message}",
-                        Status = "Error",
-                        DurationMs = timer.ElapsedMilliseconds
-                    };
-                    _aiLogs.SaveLogEntry(logEntry);
-                }
-
-                _llmPane.DisplayError($"Failed to detect patterns: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Get selected instruction index from disassembly controller (placeholder - implement in DisassemblyController).
-        /// </summary>
-        private int GetSelectedInstructionIndex() => -1;
-
-        /// <summary>
-        /// Get selected instruction address from disassembly controller (placeholder - implement in DisassemblyController).
-        /// </summary>
-        private ulong GetSelectedInstructionAddress() => 0;
     }
 }

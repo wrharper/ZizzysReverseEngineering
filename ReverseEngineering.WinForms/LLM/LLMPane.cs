@@ -5,15 +5,19 @@ using ReverseEngineering.Core.LLM;
 namespace ReverseEngineering.WinForms.LLM
 {
     /// <summary>
-    /// WinForms control to display LM Studio analysis results
-    /// Shows pseudocode, explanations, patterns, and function signatures
+    /// Master-level interactive RE tool: Chat interface with LM Studio
+    /// Users query the AI about the binary, AI can make patches/byte changes on request
+    /// Full binary context for intelligent analysis
     /// </summary>
     public partial class LLMPane : UserControl
     {
-        private RichTextBox _resultBox;
+        private RichTextBox _conversationBox;
+        private TextBox _inputBox;
+        private Button _sendButton;
         private Label _statusLabel;
-        private Button _copyButton;
-        private bool _isAnalyzing;
+        private bool _isProcessing;
+
+        public event EventHandler<QueryEventArgs>? UserQuery;
 
         public LLMPane()
         {
@@ -23,125 +27,169 @@ namespace ReverseEngineering.WinForms.LLM
 
         private void InitializeComponent()
         {
-            // Panel for buttons
-            var buttonPanel = new Panel
+            // Top: Status bar
+            var statusPanel = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 35,
-                Padding = new Padding(5)
+                Height = 28,
+                Padding = new Padding(5, 3, 5, 3)
             };
 
             _statusLabel = new Label
             {
-                Text = "Ready",
-                Dock = DockStyle.Left,
+                Text = "Ready - Ask questions about the binary or request patches",
+                Dock = DockStyle.Fill,
                 TextAlign = System.Drawing.ContentAlignment.MiddleLeft,
-                Width = 200,
-                ForeColor = System.Drawing.SystemColors.GrayText
+                ForeColor = System.Drawing.SystemColors.GrayText,
+                Font = new System.Drawing.Font("Segoe UI", 9)
             };
-            buttonPanel.Controls.Add(_statusLabel);
+            statusPanel.Controls.Add(_statusLabel);
+            Controls.Add(statusPanel);
 
-            _copyButton = new Button
-            {
-                Text = "Copy",
-                Dock = DockStyle.Right,
-                Width = 70,
-                Margin = new Padding(5)
-            };
-            _copyButton.Click += (s, e) => CopyToClipboard();
-            buttonPanel.Controls.Add(_copyButton);
-
-            // Rich text box for results
-            _resultBox = new RichTextBox
+            // Middle: Conversation display (read-only)
+            _conversationBox = new RichTextBox
             {
                 Dock = DockStyle.Fill,
                 ReadOnly = true,
                 WordWrap = true,
                 Font = new System.Drawing.Font("Consolas", 10),
-                BackColor = System.Drawing.Color.White,
-                Text = "No analysis yet. Select an instruction or function and run analysis."
+                BackColor = ThemeManager.CurrentTheme.BackColor,
+                ForeColor = ThemeManager.CurrentTheme.ForeColor,
+                Text = "AI RE Assistant ready.\n\nAsk questions like:\n" +
+                       "- What does this function do?\n" +
+                       "- NOP out the call at 0x401000\n" +
+                       "- Explain the loop structure here\n" +
+                       "- What are these registers doing?"
             };
-            _resultBox.LinkClicked += (s, e) =>
+            Controls.Add(_conversationBox);
+
+            // Bottom: Input panel (question/request)
+            var inputPanel = new Panel
             {
-                if (!string.IsNullOrEmpty(e.LinkText) && e.LinkText.StartsWith("http"))
-                {
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(e.LinkText) { UseShellExecute = true });
-                }
+                Dock = DockStyle.Bottom,
+                Height = 80,
+                Padding = new Padding(5)
             };
 
-            Controls.Add(_resultBox);
-            Controls.Add(buttonPanel);
+            _inputBox = new TextBox
+            {
+                Multiline = true,
+                AcceptsTab = false,
+                AcceptsReturn = true,
+                WordWrap = true,
+                Dock = DockStyle.Fill,
+                Font = new System.Drawing.Font("Segoe UI", 9),
+                PlaceholderText = "Ask a question or request a patch...",
+                Margin = new Padding(0, 0, 5, 0)
+            };
+            inputPanel.Controls.Add(_inputBox);
+
+            _sendButton = new Button
+            {
+                Text = "Send",
+                Dock = DockStyle.Right,
+                Width = 70,
+                Height = 70
+            };
+            _sendButton.Click += OnSendClick;
+            inputPanel.Controls.Add(_sendButton);
+
+            Controls.Add(inputPanel);
         }
 
         private void SetupUI()
         {
-            // Already done in InitializeComponent
+            // Already initialized in InitializeComponent
         }
 
-        public void Clear()
+        private void OnSendClick(object? sender, EventArgs e)
         {
-            _resultBox.Text = "Ready for analysis.";
+            if (_isProcessing) return;
+            
+            var query = _inputBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(query)) return;
+
+            _isProcessing = true;
+            _sendButton.Enabled = false;
+            _statusLabel.Text = "Processing...";
+            _statusLabel.ForeColor = System.Drawing.Color.Blue;
+
+            // Display user message
+            _conversationBox.SelectionColor = ThemeManager.CurrentTheme.Accent;
+            _conversationBox.SelectionFont = new System.Drawing.Font(_conversationBox.Font, System.Drawing.FontStyle.Bold);
+            _conversationBox.AppendText("\n[You]: ");
+            _conversationBox.SelectionColor = ThemeManager.CurrentTheme.ForeColor;
+            _conversationBox.SelectionFont = new System.Drawing.Font(_conversationBox.Font, System.Drawing.FontStyle.Regular);
+            _conversationBox.AppendText(query + "\n");
+
+            // Clear input
+            _inputBox.Clear();
+
+            // Raise event for external handler
+            UserQuery?.Invoke(this, new QueryEventArgs { Query = query });
+        }
+
+        public void DisplayResponse(string response)
+        {
+            _conversationBox.SelectionColor = System.Drawing.Color.LimeGreen;
+            _conversationBox.SelectionFont = new System.Drawing.Font(_conversationBox.Font, System.Drawing.FontStyle.Bold);
+            _conversationBox.AppendText("\n[AI]: ");
+            _conversationBox.SelectionColor = ThemeManager.CurrentTheme.ForeColor;
+            _conversationBox.SelectionFont = new System.Drawing.Font(_conversationBox.Font, System.Drawing.FontStyle.Regular);
+            _conversationBox.AppendText(response + "\n");
+
+            _statusLabel.ForeColor = System.Drawing.SystemColors.GrayText;
             _statusLabel.Text = "Ready";
-            _isAnalyzing = false;
-            _copyButton.Enabled = true;
-        }
-
-        public void DisplayResult(string title, string content)
-        {
-            _resultBox.Clear();
-            
-            // Title in bold
-            _resultBox.SelectionFont = new System.Drawing.Font(_resultBox.Font, System.Drawing.FontStyle.Bold);
-            _resultBox.AppendText($"{title}\n");
-            _resultBox.AppendText("".PadRight(title.Length, '=') + "\n\n");
-            
-            // Content
-            _resultBox.SelectionFont = new System.Drawing.Font(_resultBox.Font, System.Drawing.FontStyle.Regular);
-            _resultBox.AppendText(content);
-            
-            _statusLabel.Text = $"Displayed: {title}";
-            _isAnalyzing = false;
-            _copyButton.Enabled = true;
+            _isProcessing = false;
+            _sendButton.Enabled = true;
         }
 
         public void DisplayError(string error)
         {
-            _resultBox.Clear();
-            _resultBox.SelectionColor = System.Drawing.Color.Red;
-            _resultBox.AppendText("ERROR\n");
-            _resultBox.SelectionColor = System.Drawing.SystemColors.WindowText;
-            _resultBox.AppendText(error);
-            _statusLabel.Text = "Error";
-            _isAnalyzing = false;
-            _copyButton.Enabled = true;
+            _conversationBox.SelectionColor = System.Drawing.Color.Red;
+            _conversationBox.SelectionFont = new System.Drawing.Font(_conversationBox.Font, System.Drawing.FontStyle.Bold);
+            _conversationBox.AppendText("\n[ERROR]: ");
+            _conversationBox.SelectionColor = ThemeManager.CurrentTheme.ForeColor;
+            _conversationBox.SelectionFont = new System.Drawing.Font(_conversationBox.Font, System.Drawing.FontStyle.Regular);
+            _conversationBox.AppendText(error + "\n");
+
+            _statusLabel.ForeColor = System.Drawing.Color.Red;
+            _statusLabel.Text = "Error occurred";
+            _isProcessing = false;
+            _sendButton.Enabled = true;
         }
 
         public void SetAnalyzing(string task)
         {
-            _statusLabel.Text = $"Analyzing: {task}...";
+            _statusLabel.Text = $"Processing: {task}...";
             _statusLabel.ForeColor = System.Drawing.Color.Blue;
-            _resultBox.Text = $"Analyzing: {task}...\n\nPlease wait...";
-            _isAnalyzing = true;
-            _copyButton.Enabled = false;
+            _isProcessing = true;
+            _sendButton.Enabled = false;
         }
 
-        public void CopyToClipboard()
+        public bool IsProcessing => _isProcessing;
+
+        public void Clear()
         {
-            if (!string.IsNullOrWhiteSpace(_resultBox.Text))
-            {
-                Clipboard.SetText(_resultBox.Text);
-                _statusLabel.Text = "Copied to clipboard";
-                System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
-                timer.Interval = 2000;
-                timer.Tick += (s, e) =>
-                {
-                    _statusLabel.Text = "Ready";
-                    timer.Stop();
-                };
-                timer.Start();
-            }
+            _conversationBox.Clear();
+            _conversationBox.AppendText("AI RE Assistant ready.\n\nAsk questions like:\n" +
+                                        "- What does this function do?\n" +
+                                        "- NOP out the call at 0x401000\n" +
+                                        "- Explain the loop structure here\n" +
+                                        "- What are these registers doing?");
+            _statusLabel.Text = "Ready";
+            _statusLabel.ForeColor = System.Drawing.SystemColors.GrayText;
+            _isProcessing = false;
+            _sendButton.Enabled = true;
         }
+    }
 
-        public bool IsAnalyzing => _isAnalyzing;
+    /// <summary>
+    /// Event args for user queries
+    /// </summary>
+    public class QueryEventArgs : EventArgs
+    {
+        public string Query { get; set; } = string.Empty;
     }
 }
+

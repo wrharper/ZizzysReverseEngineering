@@ -4,23 +4,77 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using ReverseEngineering.Core;
+using ReverseEngineering.Core.Analysis;
+
+#nullable enable
 
 namespace ReverseEngineering.Core.LLM
 {
     /// <summary>
     /// Provides curated prompts and response parsing for RE analysis with LM Studio
+    /// Works with binary context sessions for full awareness of analysis state
     /// </summary>
     public class LLMAnalyzer
     {
         private readonly LocalLLMClient _client;
+        private readonly CoreEngine? _engine;
+        private readonly BinaryContextGenerator? _contextGenerator;
+        private LLMSession? _currentSession;
+
         private const string RE_SYSTEM_PROMPT = "You are an expert in reverse engineering x86/x64 assembly code. " +
             "Provide concise, technical analysis focusing on function behavior, data flow, and control flow. " +
             "Keep responses brief (1-3 sentences).";
 
-        public LLMAnalyzer(LocalLLMClient client)
+        public LLMAnalyzer(LocalLLMClient client, CoreEngine? engine = null)
         {
             _client = client ?? throw new ArgumentNullException(nameof(client));
+            _engine = engine;
+            _contextGenerator = engine != null ? new BinaryContextGenerator(engine) : null!;
         }
+
+        // ---------------------------------------------------------
+        //  SESSION MANAGEMENT
+        // ---------------------------------------------------------
+
+        /// <summary>
+        /// Start new LLM session with binary context
+        /// </summary>
+        public LLMSession CreateSession()
+        {
+            if (_engine == null || _contextGenerator == null)
+                throw new InvalidOperationException("Engine not available for context-aware analysis. Initialize with CoreEngine.");
+
+            _currentSession = new LLMSession(_client, _contextGenerator);
+            _currentSession.UpdateContext();
+            return _currentSession;
+        }
+
+        /// <summary>
+        /// Get current session (or create if none exists)
+        /// </summary>
+        public LLMSession GetOrCreateSession()
+        {
+            if (_currentSession == null)
+                return CreateSession();
+            
+            _currentSession.UpdateContext(); // Ensure context is current
+            return _currentSession;
+        }
+
+        /// <summary>
+        /// Send query through current session
+        /// </summary>
+        public async Task<string> QueryWithContextAsync(
+            string query,
+            CancellationToken cancellationToken = default)
+        {
+            var session = GetOrCreateSession();
+            return await session.QueryAsync(query, cancellationToken);
+        }
+
+        // ---------------------------------------------------------
+        //  LEGACY METHODS (for backward compatibility)
+        // ---------------------------------------------------------
 
         /// <summary>
         /// Explain what an instruction does

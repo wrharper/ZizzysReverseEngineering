@@ -8,6 +8,7 @@ using ReverseEngineering.Core;
 using ReverseEngineering.Core.ProjectSystem;
 using ReverseEngineering.Core.AILogs;
 using ReverseEngineering.WinForms.HexEditor;
+using ReverseEngineering.WinForms.LLM;
 using ReverseEngineering.WinForms.AILogs;
 using ReverseEngineering.WinForms.Compatibility;
 
@@ -21,6 +22,8 @@ namespace ReverseEngineering.WinForms.MainWindow
         private readonly LogControl _log;
         private readonly ToolStripStatusLabel _statusFile;
         private readonly CoreEngine _core;
+        private readonly PEInfoControl? _peInfoControl;
+        private readonly LLMPane? _llmPane;
 
         private readonly DisassemblyController _disasmController;
         private readonly AnalysisController? _analysisController;
@@ -38,7 +41,9 @@ namespace ReverseEngineering.WinForms.MainWindow
             ToolStripStatusLabel statusFile,
             CoreEngine core,
             AnalysisController? analysisController = null,
-            AILogsManager? aiLogsManager = null)
+            AILogsManager? aiLogsManager = null,
+            PEInfoControl? peInfoControl = null,
+            LLMPane? llmPane = null)
         {
             _form = form;
             _menu = menu;
@@ -49,8 +54,13 @@ namespace ReverseEngineering.WinForms.MainWindow
             _disasmController = disasmController;
             _analysisController = analysisController;
             _aiLogsManager = aiLogsManager ?? new AILogsManager();
+            _peInfoControl = peInfoControl;
+            _llmPane = llmPane;
 
             BuildMenu();
+
+            // Wire up app close to clear LLM context
+            _form.FormClosing += (s, e) => _llmPane?.Clear();
 
             // ⭐ CRITICAL: async HEX → ASM sync
             _hex.ByteChanged += OnHexByteChanged;
@@ -100,14 +110,6 @@ namespace ReverseEngineering.WinForms.MainWindow
                 var runAnalysisItem = new ToolStripMenuItem("Run Analysis", null, (s, e) => RunAnalysisClick());
                 runAnalysisItem.ShortcutKeys = Keys.Control | Keys.Shift | Keys.A;
                 analysis.DropDownItems.Add(runAnalysisItem);
-
-                analysis.DropDownItems.Add(new ToolStripSeparator());
-
-                var explainItem = new ToolStripMenuItem("Explain Instruction (LLM)", null, (s, e) => ExplainInstructionClick());
-                analysis.DropDownItems.Add(explainItem);
-
-                var pseudocodeItem = new ToolStripMenuItem("Generate Pseudocode (LLM)", null, (s, e) => GeneratePseudocodeClick());
-                analysis.DropDownItems.Add(pseudocodeItem);
 
                 _menu.Items.Add(analysis);
             }
@@ -299,6 +301,9 @@ namespace ReverseEngineering.WinForms.MainWindow
             if (ofd.ShowDialog() != DialogResult.OK)
                 return;
 
+            // Clear LLM context for new binary
+            _llmPane?.Clear();
+
             _core.LoadFile(ofd.FileName);
 
             _suppressEvents = true;
@@ -306,8 +311,22 @@ namespace ReverseEngineering.WinForms.MainWindow
             _disasmController.Load(_core);
             _suppressEvents = false;
 
-            _log.Append($"Loaded binary: {ofd.FileName}");
+            Logger.Info("UI", $"Loaded binary: {ofd.FileName}");
             _statusFile.Text = Path.GetFileName(ofd.FileName);
+
+            // Load and display PE info
+            if (_peInfoControl != null && _core.PEInfo != null)
+            {
+                _peInfoControl.LoadPEInfo(_core.PEInfo);
+                Logger.Info("UI", $"PE: {(_core.PEInfo.Is64Bit ? "x64" : "x86")} @ 0x{_core.PEInfo.ImageBase:X}, Entry: 0x{_core.PEInfo.AddressOfEntryPoint:X}");
+            }
+
+            // Auto-run analysis if enabled in settings
+            if (_analysisController != null && ReverseEngineering.Core.ProjectSystem.SettingsManager.Current.Analysis.AutoAnalyzeOnLoad)
+            {
+                Logger.Info("Analysis", "Starting analysis...");
+                _ = _analysisController.RunAnalysisAsync();
+            }
         }
 
         // ---------------------------------------------------------
@@ -320,6 +339,9 @@ namespace ReverseEngineering.WinForms.MainWindow
 
             if (ofd.ShowDialog() != DialogResult.OK)
                 return;
+
+            // Clear LLM context for new project
+            _llmPane?.Clear();
 
             var project = ProjectSerializer.Load(ofd.FileName);
 
@@ -351,6 +373,13 @@ namespace ReverseEngineering.WinForms.MainWindow
 
             _log.Append($"Loaded project: {ofd.FileName}");
             _statusFile.Text = Path.GetFileName(ofd.FileName);
+
+            // Auto-run analysis on project load
+            if (_analysisController != null)
+            {
+                Logger.Info("Analysis", "Starting analysis...");
+                _ = _analysisController.RunAnalysisAsync();
+            }
         }
 
         // ---------------------------------------------------------
@@ -408,45 +437,8 @@ namespace ReverseEngineering.WinForms.MainWindow
                 return;
             }
 
-            _log.Append("Starting analysis...");
+            Logger.Info("Analysis", "Manual analysis start requested");
             _ = _analysisController.RunAnalysisAsync();
-        }
-
-        private void ExplainInstructionClick()
-        {
-            if (_analysisController == null) return;
-
-            var selectedIndex = _disasmController.GetSelectedInstructionIndex();
-            if (selectedIndex < 0 || selectedIndex >= _core.Disassembly.Count)
-            {
-                MessageBox.Show("Please select an instruction first");
-                return;
-            }
-
-            _log.Append("Explaining instruction via LLM...");
-            _ = _analysisController.ExplainInstructionAsync(selectedIndex);
-        }
-
-        private void GeneratePseudocodeClick()
-        {
-            if (_analysisController == null) return;
-
-            var selectedAddress = _disasmController.GetSelectedInstructionAddress();
-            if (selectedAddress == 0)
-            {
-                MessageBox.Show("Please select an instruction first");
-                return;
-            }
-
-            var func = _core.FindFunctionAtAddress(selectedAddress);
-            if (func == null)
-            {
-                MessageBox.Show("No function found at selected address");
-                return;
-            }
-
-            _log.Append($"Generating pseudocode for {func.Name}...");
-            _ = _analysisController.GeneratePseudocodeAsync(func.Address);
         }
 
         // ---------------------------------------------------------

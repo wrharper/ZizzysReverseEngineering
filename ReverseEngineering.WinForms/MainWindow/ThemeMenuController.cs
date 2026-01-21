@@ -3,6 +3,7 @@
 
 using System;
 using System.Windows.Forms;
+using ReverseEngineering.WinForms.Settings;
 
 namespace ReverseEngineering.WinForms.MainWindow
 {
@@ -23,12 +24,30 @@ namespace ReverseEngineering.WinForms.MainWindow
         {
             var theme = new ToolStripMenuItem("Theme");
 
-            theme.DropDownItems.Add(new ToolStripMenuItem("Dark", null, (s, e) => ThemeManager.ApplyTheme(_form, Themes.Dark)));
-            theme.DropDownItems.Add(new ToolStripMenuItem("Light", null, (s, e) => ThemeManager.ApplyTheme(_form, Themes.Light)));
-            theme.DropDownItems.Add(new ToolStripMenuItem("Midnight", null, (s, e) => ThemeManager.ApplyTheme(_form, Themes.Midnight)));
-            theme.DropDownItems.Add(new ToolStripMenuItem("Hacker Green", null, (s, e) => ThemeManager.ApplyTheme(_form, Themes.HackerGreen)));
+            // Single menu item: opens Settings dialog to UI tab (index 2)
+            theme.DropDownItems.Add(new ToolStripMenuItem("Settings...", null, (s, e) => 
+            {
+                using (var dialog = new SettingsDialog(2))  // No need to pass form - uses this.Owner automatically
+                {
+                    if (dialog.ShowDialog(_form) == DialogResult.OK)
+                    {
+                        // Theme changes were applied live, just ensure main form updates
+                        ThemeManager.ApplyTheme(_form);
+                        _form.Refresh();
+                    }
+                }
+            }));
 
             _menu.Items.Add(theme);
+        }
+
+        private static void OnThemeSelected(Form form, AppTheme theme, string themeName)
+        {
+            // Set theme and persist to settings
+            ThemeManager.SetTheme(theme, themeName);
+
+            // Apply to form
+            ThemeManager.ApplyTheme(form);
         }
     }
 }

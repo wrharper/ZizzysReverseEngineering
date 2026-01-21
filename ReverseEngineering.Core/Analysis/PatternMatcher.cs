@@ -240,6 +240,10 @@ namespace ReverseEngineering.Core.Analysis
         public static List<PatternMatch> FindStrings(byte[] buffer, int minLength = 4)
         {
             var matches = new List<PatternMatch>();
+            
+            if (buffer == null || buffer.Length == 0)
+                return matches;
+
             var currentString = new StringBuilder();
             int startOffset = 0;
 

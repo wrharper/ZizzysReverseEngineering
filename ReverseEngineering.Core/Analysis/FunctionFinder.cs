@@ -48,36 +48,66 @@ namespace ReverseEngineering.Core.Analysis
             var functions = new Dictionary<ulong, Function>();
 
             // Step 1: Add entry point
+            Logger.Debug("FunctionFinder", "Adding entry point...");
             AddEntryPoint(disassembly, engine, functions);
 
             // Step 2: Add exports
             if (includeExports)
+            {
+                Logger.Debug("FunctionFinder", "Finding exported functions...");
                 AddExportedFunctions(disassembly, engine, functions);
+            }
 
             // Step 3: Add imported functions
             if (includeImports)
+            {
+                Logger.Debug("FunctionFinder", "Finding imported functions...");
                 AddImportedFunctions(disassembly, engine, functions);
+            }
 
             // Step 4: Find prologue-based functions
             if (includePrologues)
+            {
+                Logger.Debug("FunctionFinder", "Finding prologue-based functions...");
                 FindPrologueFunctions(disassembly, functions);
+                Logger.Debug("FunctionFinder", $"Found {functions.Count} functions so far");
+            }
 
             // Step 5: Recursively find functions via call graph
             if (includeCallGraph)
+            {
+                Logger.Debug("FunctionFinder", "Finding call graph functions...");
                 FindViaCallGraph(disassembly, functions);
+                Logger.Debug("FunctionFinder", $"Found {functions.Count} total functions");
+            }
 
-            // Step 6: Build CFG for each function
-            foreach (var func in functions.Values)
+            // Step 6: Build CFG for each function (limit to first 500 to avoid timeout)
+            Logger.Debug("FunctionFinder", "Building CFG for each function...");
+            int cfgCount = 0;
+            int cfgLimit = Math.Min(500, functions.Count);  // Limit to avoid timeout on binaries with many false positive functions
+            int cfgIndex = 0;
+            var cfgSw = System.Diagnostics.Stopwatch.StartNew();
+            foreach (var func in functions.Values.Take(cfgLimit))
             {
                 try
                 {
                     func.CFG = BasicBlockBuilder.BuildCFG(disassembly, func.Address);
+                    cfgCount++;
                 }
                 catch
                 {
                     // Silently fail if CFG build fails for this function
                 }
+                
+                cfgIndex++;
+                if (cfgIndex % 10 == 0 || cfgIndex == cfgLimit)
+                {
+                    Logger.Debug("FunctionFinder", $"  CFG progress: {cfgIndex}/{cfgLimit} ({cfgSw.ElapsedMilliseconds}ms)");
+                }
             }
+            cfgSw.Stop();
+            Logger.Debug("FunctionFinder", $"Built CFG for {cfgCount}/{cfgLimit} functions ({cfgSw.ElapsedMilliseconds}ms total)");
+            Logger.Info("FunctionFinder", $"CFG building complete: {cfgCount} CFGs built, {cfgLimit} total functions");
 
             return functions.Values.OrderBy(f => f.Address).ToList();
         }
@@ -118,7 +148,12 @@ namespace ReverseEngineering.Core.Analysis
 
         private static void FindPrologueFunctions(List<Instruction> disassembly, Dictionary<ulong, Function> functions)
         {
-            for (int i = 0; i < disassembly.Count; i++)
+            // Optimization: sample every Nth instruction to avoid O(N²) behavior on large binaries
+            // Most prologues start with PUSH or SUB, which aren't super common
+            int sampleRate = disassembly.Count > 10000 ? 4 : 1;  // Every 4th instruction for large binaries
+            int prologuesFound = 0;
+            
+            for (int i = 0; i < disassembly.Count; i += sampleRate)
             {
                 var ins = disassembly[i];
 
@@ -132,9 +167,12 @@ namespace ReverseEngineering.Core.Analysis
                             Address = ins.Address,
                             Source = "prologue"
                         };
+                        prologuesFound++;
                     }
                 }
             }
+            
+            Logger.Debug("FunctionFinder", $"Prologue search: sampled {disassembly.Count / sampleRate} instructions, found {prologuesFound} prologues");
         }
 
         private static void FindViaCallGraph(List<Instruction> disassembly, Dictionary<ulong, Function> functions)
@@ -184,31 +222,55 @@ namespace ReverseEngineering.Core.Analysis
 
             var mnemonic = ins.Raw.Value.Mnemonic;
 
-            // Common x86/x64 prologue patterns:
-            // 1. PUSH RBP / MOV RBP, RSP
+            // STRICT prologue patterns to reduce false positives:
+            // Only match VERY clear function starts
+            
+            // Pattern 1: PUSH RBP; MOV RBP, RSP (frame pointer setup)
             if (mnemonic == Mnemonic.Push && index + 1 < disassembly.Count)
             {
+                var raw = ins.Raw.Value;
+                // Must be PUSH RBP or PUSH RDI (callee-saved registers)
+                bool isPushCalleeSaved = raw.Op0Register == Register.RBP || 
+                                        raw.Op0Register == Register.RBX ||
+                                        raw.Op0Register == Register.RDI ||
+                                        raw.Op0Register == Register.RSI;
+                if (!isPushCalleeSaved)
+                    return false;
+
                 var next = disassembly[index + 1];
                 if (next.Raw != null && next.Raw.Value.Mnemonic == Mnemonic.Mov)
-                    return true; // Likely "PUSH RBP; MOV RBP, RSP"
+                    return true; // Likely "PUSH Reg; MOV ..." 
             }
 
-            // 2. SUB RSP, imm
+            // Pattern 2: Only match SUB RSP with reasonable immediate (stack allocation for locals)
             if (mnemonic == Mnemonic.Sub)
-                return true;
-
-            // 3. MOV RBP, RSP
-            if (mnemonic == Mnemonic.Mov)
             {
                 var raw = ins.Raw.Value;
-                // Check if it's MOV RBP, RSP
-                if (raw.Op0Register == Register.RBP && raw.Op1Register == Register.RSP)
-                    return true;
+                // Must be SUB RSP, imm (and imm should be reasonable, e.g., 0x10-0x1000)
+                if (raw.Op0Register == Register.RSP && raw.OpCount > 1)
+                {
+                    try
+                    {
+                        var imm = raw.Immediate64;
+                        // Only match if stack allocation is between 16 bytes and 64KB (reasonable)
+                        if (imm >= 0x10 && imm <= 0x10000)
+                            return true;
+                    }
+                    catch { }
+                }
             }
 
-            // 4. XOR EAX, EAX (common in x64 ABI for return value)
-            if (mnemonic == Mnemonic.Xor)
-                return true;
+            // Pattern 3: MOV RBP, RSP only if it immediately follows PUSH RBP
+            if (mnemonic == Mnemonic.Mov && index > 0)
+            {
+                var raw = ins.Raw.Value;
+                if (raw.Op0Register == Register.RBP && raw.Op1Register == Register.RSP)
+                {
+                    var prev = disassembly[index - 1];
+                    if (prev.Raw != null && prev.Raw.Value.Mnemonic == Mnemonic.Push)
+                        return true;
+                }
+            }
 
             return false;
         }

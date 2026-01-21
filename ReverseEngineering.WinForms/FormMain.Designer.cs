@@ -73,12 +73,12 @@ namespace ReverseEngineering.WinForms
             this.splitMain.SplitterDistance = 750;
 
             // SplitLeft (Top: Hex, Bottom: Disasm)
-            this.splitLeft.Dock = DockStyle.Fill;
+            this.splitLeft.Dock = DockStyle.None;
             this.splitLeft.Orientation = Orientation.Horizontal;
             this.splitLeft.SplitterDistance = 350;
 
             // SplitRight (Top: SymbolTree/Graph tabs, Bottom: LLM/Log tabs)
-            this.splitRight.Dock = DockStyle.Fill;
+            this.splitRight.Dock = DockStyle.None;
             this.splitRight.Orientation = Orientation.Horizontal;
             this.splitRight.SplitterDistance = 350;
 

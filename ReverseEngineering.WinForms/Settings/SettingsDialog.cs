@@ -54,9 +54,24 @@ namespace ReverseEngineering.WinForms.Settings
         private CheckBox _detailedLoggingCheckBox = null!;
         private NumericUpDown _logRetentionNumeric = null!;
 
-        public SettingsDialog()
+        // ---------------------------------------------------------
+        //  THEME PREVIEW
+        // ---------------------------------------------------------
+        private AppTheme _originalTheme = Themes.Dark;  // Saved on open for revert on cancel
+        private string _originalThemeName = "Dark";     // Theme name for settings restoration
+
+        /// <summary>
+        /// Which tab to show when dialog opens.
+        /// Default is 0 (LM Studio). Set to 2 for UI tab (themes).
+        /// </summary>
+        private int _initialTabIndex = 0;
+
+        public SettingsDialog(int initialTabIndex = 0)
         {
             _settings = SettingsManager.Current;
+            _initialTabIndex = initialTabIndex;
+            _originalTheme = ThemeManager.CurrentTheme;  // Save current theme for revert
+            _originalThemeName = _settings.UI.Theme ?? "Dark";  // Save theme name for settings restoration
             InitializeComponents();
             LoadSettings();
             StartPosition = FormStartPosition.CenterParent;
@@ -67,8 +82,8 @@ namespace ReverseEngineering.WinForms.Settings
         {
             Text = "Application Settings";
             Size = new Size(600, 500);
-            BackColor = Color.FromArgb(45, 45, 48);
-            ForeColor = Color.FromArgb(220, 220, 220);
+            BackColor = ThemeManager.CurrentTheme.BackColor;
+            ForeColor = ThemeManager.CurrentTheme.ForeColor;
             Font = new Font("Segoe UI", 9);
 
             // Main layout
@@ -84,6 +99,10 @@ namespace ReverseEngineering.WinForms.Settings
             _tabControl.TabPages.Add(CreateUITab());
             _tabControl.TabPages.Add(CreateAdvancedTab());
 
+            // Set initial tab if requested
+            if (_initialTabIndex >= 0 && _initialTabIndex < _tabControl.TabPages.Count)
+                _tabControl.SelectedIndex = _initialTabIndex;
+
             // Buttons
             var buttonPanel = new Panel { Dock = DockStyle.Bottom, Height = 50, Padding = new Padding(10) };
             mainPanel.Controls.Add(buttonPanel);
@@ -94,8 +113,8 @@ namespace ReverseEngineering.WinForms.Settings
                 Width = 120,
                 Height = 32,
                 Location = new Point(10, 8),
-                BackColor = Color.FromArgb(63, 63, 70),
-                ForeColor = Color.White,
+                BackColor = ThemeManager.CurrentTheme.ButtonBack,
+                ForeColor = ThemeManager.CurrentTheme.ButtonFore,
                 FlatStyle = FlatStyle.Flat
             };
             _resetButton.Click += (s, e) =>
@@ -115,8 +134,8 @@ namespace ReverseEngineering.WinForms.Settings
                 Width = 80,
                 Height = 32,
                 Location = new Point(350, 8),
-                BackColor = Color.FromArgb(0, 120, 215),
-                ForeColor = Color.White,
+                BackColor = ThemeManager.CurrentTheme.Accent,
+                ForeColor = ThemeManager.CurrentTheme.ForeColor,
                 FlatStyle = FlatStyle.Flat
             };
             _okButton.Click += (s, e) => SaveSettings();
@@ -129,10 +148,11 @@ namespace ReverseEngineering.WinForms.Settings
                 Width = 80,
                 Height = 32,
                 Location = new Point(440, 8),
-                BackColor = Color.FromArgb(63, 63, 70),
-                ForeColor = Color.White,
+                BackColor = ThemeManager.CurrentTheme.ButtonBack,
+                ForeColor = ThemeManager.CurrentTheme.ButtonFore,
                 FlatStyle = FlatStyle.Flat
             };
+            _cancelButton.Click += (s, e) => CancelThemePreview();
             buttonPanel.Controls.Add(_cancelButton);
 
             CancelButton = _cancelButton;
@@ -144,7 +164,7 @@ namespace ReverseEngineering.WinForms.Settings
         // ---------------------------------------------------------
         private TabPage CreateLMStudioTab()
         {
-            var tab = new TabPage { Text = "LM Studio", BackColor = Color.FromArgb(45, 45, 48), ForeColor = Color.FromArgb(220, 220, 220) };
+            var tab = new TabPage { Text = "LM Studio", BackColor = ThemeManager.CurrentTheme.BackColor, ForeColor = ThemeManager.CurrentTheme.ForeColor };
             var panel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(15) };
             tab.Controls.Add(panel);
 
@@ -155,7 +175,7 @@ namespace ReverseEngineering.WinForms.Settings
 
             // Host
             AddLabel(panel, "Host:", 10, y);
-            _lmHostTextBox = new TextBox { Text = _settings.LMStudio.Host, Width = 300, Location = new Point(150, y), BackColor = Color.FromArgb(60, 60, 60), ForeColor = Color.White };
+            _lmHostTextBox = new TextBox { Text = _settings.LMStudio.Host, Width = 300, Location = new Point(150, y), BackColor = ThemeManager.CurrentTheme.PanelColor, ForeColor = ThemeManager.CurrentTheme.ForeColor };
             panel.Controls.Add(_lmHostTextBox);
             y += 30;
 
@@ -168,15 +188,15 @@ namespace ReverseEngineering.WinForms.Settings
                 Value = Math.Min(_settings.LMStudio.Port, 65535),
                 Width = 100, 
                 Location = new Point(150, y), 
-                BackColor = Color.FromArgb(60, 60, 60), 
-                ForeColor = Color.White 
+                BackColor = ThemeManager.CurrentTheme.PanelColor, 
+                ForeColor = ThemeManager.CurrentTheme.ForeColor 
             };
             panel.Controls.Add(_lmPortNumeric);
             y += 30;
 
             // Model
             AddLabel(panel, "Model:", 10, y);
-            _lmModelTextBox = new TextBox { Text = _settings.LMStudio.ModelName ?? "", Width = 300, Location = new Point(150, y), BackColor = Color.FromArgb(60, 60, 60), ForeColor = Color.White };
+            _lmModelTextBox = new TextBox { Text = _settings.LMStudio.ModelName ?? "", Width = 300, Location = new Point(150, y), BackColor = ThemeManager.CurrentTheme.PanelColor, ForeColor = ThemeManager.CurrentTheme.ForeColor };
             panel.Controls.Add(_lmModelTextBox);
             y += 30;
 
@@ -185,7 +205,7 @@ namespace ReverseEngineering.WinForms.Settings
             _lmTempTrackBar = new TrackBar { Minimum = 0, Maximum = 100, Value = (int)(_settings.LMStudio.Temperature * 100), Width = 300, Location = new Point(150, y) };
             _lmTempTrackBar.ValueChanged += (s, e) => _lmTempLabel.Text = $"Temperature: {_lmTempTrackBar.Value / 100.0:F2}";
             panel.Controls.Add(_lmTempTrackBar);
-            _lmTempLabel = new Label { Text = $"Temperature: {_settings.LMStudio.Temperature:F2}", Location = new Point(460, y + 2), AutoSize = true, ForeColor = Color.FromArgb(200, 200, 200) };
+            _lmTempLabel = new Label { Text = $"Temperature: {_settings.LMStudio.Temperature:F2}", Location = new Point(460, y + 2), AutoSize = true, ForeColor = ThemeManager.CurrentTheme.ForeColor };
             panel.Controls.Add(_lmTempLabel);
             y += 30;
 
@@ -198,8 +218,8 @@ namespace ReverseEngineering.WinForms.Settings
                 Value = Math.Min(_settings.LMStudio.MaxTokens, 32768),
                 Width = 100, 
                 Location = new Point(150, y), 
-                BackColor = Color.FromArgb(60, 60, 60), 
-                ForeColor = Color.White 
+                BackColor = ThemeManager.CurrentTheme.PanelColor, 
+                ForeColor = ThemeManager.CurrentTheme.ForeColor 
             };
             panel.Controls.Add(_lmMaxTokensNumeric);
             y += 30;
@@ -213,8 +233,8 @@ namespace ReverseEngineering.WinForms.Settings
                 Value = Math.Clamp(_settings.LMStudio.RequestTimeoutSeconds, 10, 1800),
                 Width = 100, 
                 Location = new Point(150, y), 
-                BackColor = Color.FromArgb(60, 60, 60), 
-                ForeColor = Color.White 
+                BackColor = ThemeManager.CurrentTheme.PanelColor, 
+                ForeColor = ThemeManager.CurrentTheme.ForeColor 
             };
             panel.Controls.Add(_lmTimeoutNumeric);
             y += 30;
@@ -230,8 +250,8 @@ namespace ReverseEngineering.WinForms.Settings
                 Width = 150,
                 Height = 32,
                 Location = new Point(150, y),
-                BackColor = Color.FromArgb(0, 120, 215),
-                ForeColor = Color.White,
+                BackColor = ThemeManager.CurrentTheme.Accent,
+                ForeColor = ThemeManager.CurrentTheme.ForeColor,
                 FlatStyle = FlatStyle.Flat
             };
             _testConnectionButton.Click += TestConnection;
@@ -245,7 +265,7 @@ namespace ReverseEngineering.WinForms.Settings
         // ---------------------------------------------------------
         private TabPage CreateAnalysisTab()
         {
-            var tab = new TabPage { Text = "Analysis", BackColor = Color.FromArgb(45, 45, 48), ForeColor = Color.FromArgb(220, 220, 220) };
+            var tab = new TabPage { Text = "Analysis", BackColor = ThemeManager.CurrentTheme.BackColor, ForeColor = ThemeManager.CurrentTheme.ForeColor };
             var panel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(15) };
             tab.Controls.Add(panel);
 
@@ -266,8 +286,8 @@ namespace ReverseEngineering.WinForms.Settings
                 Value = Math.Clamp(_settings.Analysis.MaxFunctionSize, 100, 100000),
                 Width = 150, 
                 Location = new Point(150, y), 
-                BackColor = Color.FromArgb(60, 60, 60), 
-                ForeColor = Color.White 
+                BackColor = ThemeManager.CurrentTheme.PanelColor, 
+                ForeColor = ThemeManager.CurrentTheme.ForeColor 
             };
             panel.Controls.Add(_maxFunctionSizeNumeric);
 
@@ -279,7 +299,7 @@ namespace ReverseEngineering.WinForms.Settings
         // ---------------------------------------------------------
         private TabPage CreateUITab()
         {
-            var tab = new TabPage { Text = "UI", BackColor = Color.FromArgb(45, 45, 48), ForeColor = Color.FromArgb(220, 220, 220) };
+            var tab = new TabPage { Text = "UI", BackColor = ThemeManager.CurrentTheme.BackColor, ForeColor = ThemeManager.CurrentTheme.ForeColor };
             var panel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(15) };
             tab.Controls.Add(panel);
 
@@ -287,7 +307,7 @@ namespace ReverseEngineering.WinForms.Settings
 
             // Theme
             AddLabel(panel, "Theme:", 10, y);
-            _themeComboBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200, Location = new Point(150, y), BackColor = Color.FromArgb(60, 60, 60), ForeColor = Color.White };
+            _themeComboBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200, Location = new Point(150, y), BackColor = ThemeManager.CurrentTheme.PanelColor, ForeColor = ThemeManager.CurrentTheme.ForeColor };
             _themeComboBox.Items.AddRange(new[] { "Dark", "Light", "Midnight", "HackerGreen" });
             _themeComboBox.SelectedItem = _settings.UI.Theme ?? "Dark";
             _themeComboBox.SelectedIndexChanged += ThemeComboBox_SelectedIndexChanged;
@@ -296,7 +316,7 @@ namespace ReverseEngineering.WinForms.Settings
 
             // Font
             AddLabel(panel, "Font:", 10, y);
-            _fontFamilyComboBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200, Location = new Point(150, y), BackColor = Color.FromArgb(60, 60, 60), ForeColor = Color.White };
+            _fontFamilyComboBox = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200, Location = new Point(150, y), BackColor = ThemeManager.CurrentTheme.PanelColor, ForeColor = ThemeManager.CurrentTheme.ForeColor };
             foreach (var family in new[] { "Consolas", "Courier New", "Segoe UI Mono", "Liberation Mono" })
                 _fontFamilyComboBox.Items.Add(family);
             _fontFamilyComboBox.SelectedItem = _settings.UI.FontFamily;
@@ -311,8 +331,8 @@ namespace ReverseEngineering.WinForms.Settings
                 Value = Math.Clamp(_settings.UI.FontSize, 8, 24),
                 Width = 80, 
                 Location = new Point(150, y), 
-                BackColor = Color.FromArgb(60, 60, 60), 
-                ForeColor = Color.White 
+                BackColor = ThemeManager.CurrentTheme.PanelColor, 
+                ForeColor = ThemeManager.CurrentTheme.ForeColor 
             };
             panel.Controls.Add(_fontSizeNumeric);
             y += 30;
@@ -328,8 +348,8 @@ namespace ReverseEngineering.WinForms.Settings
                 Value = Math.Clamp(_settings.UI.HexBytesPerRow, 4, 64),
                 Width = 80, 
                 Location = new Point(150, y), 
-                BackColor = Color.FromArgb(60, 60, 60), 
-                ForeColor = Color.White 
+                BackColor = ThemeManager.CurrentTheme.PanelColor, 
+                ForeColor = ThemeManager.CurrentTheme.ForeColor 
             };
             panel.Controls.Add(_hexBytesPerRowNumeric);
             y += 30;
@@ -344,7 +364,7 @@ namespace ReverseEngineering.WinForms.Settings
         // ---------------------------------------------------------
         private TabPage CreateAdvancedTab()
         {
-            var tab = new TabPage { Text = "Advanced", BackColor = Color.FromArgb(45, 45, 48), ForeColor = Color.FromArgb(220, 220, 220) };
+            var tab = new TabPage { Text = "Advanced", BackColor = ThemeManager.CurrentTheme.BackColor, ForeColor = ThemeManager.CurrentTheme.ForeColor };
             var panel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(15) };
             tab.Controls.Add(panel);
 
@@ -360,8 +380,8 @@ namespace ReverseEngineering.WinForms.Settings
                 Value = Math.Clamp(_settings.LogRetentionDays, 1, 365),
                 Width = 80, 
                 Location = new Point(150, y), 
-                BackColor = Color.FromArgb(60, 60, 60), 
-                ForeColor = Color.White 
+                BackColor = ThemeManager.CurrentTheme.PanelColor, 
+                ForeColor = ThemeManager.CurrentTheme.ForeColor 
             };
             panel.Controls.Add(_logRetentionNumeric);
 
@@ -386,7 +406,7 @@ namespace ReverseEngineering.WinForms.Settings
                 Text = labelText, 
                 Location = new Point(labelX, y + 2), 
                 AutoSize = true, 
-                ForeColor = Color.FromArgb(200, 200, 200),
+                ForeColor = ThemeManager.CurrentTheme.ForeColor,
                 Anchor = AnchorStyles.Left | AnchorStyles.Top
             };
             panel.Controls.Add(label);
@@ -404,14 +424,14 @@ namespace ReverseEngineering.WinForms.Settings
         // ---------------------------------------------------------
         private Label AddLabel(Panel panel, string text, int x, int y)
         {
-            var label = new Label { Text = text, Location = new Point(x, y + 2), AutoSize = true, ForeColor = Color.FromArgb(200, 200, 200) };
+            var label = new Label { Text = text, Location = new Point(x, y + 2), AutoSize = true, ForeColor = ThemeManager.CurrentTheme.ForeColor };
             panel.Controls.Add(label);
             return label;
         }
 
         private CheckBox AddCheckBox(Panel panel, string text, int x, ref int y, bool? initialValue = null)
         {
-            var cb = new CheckBox { Text = text, Location = new Point(x, y), AutoSize = true, Checked = initialValue ?? false, ForeColor = Color.FromArgb(220, 220, 220) };
+            var cb = new CheckBox { Text = text, Location = new Point(x, y), AutoSize = true, Checked = initialValue ?? false, ForeColor = ThemeManager.CurrentTheme.ForeColor };
             panel.Controls.Add(cb);
             y += 25;
             return cb;
@@ -444,7 +464,10 @@ namespace ReverseEngineering.WinForms.Settings
             SettingsManager.SetAutoAnalyzeOnPatch(_autoAnalyzePatchCheckBox.Checked);
             SettingsManager.SetMaxFunctionSize((int)_maxFunctionSizeNumeric.Value);
 
-            SettingsManager.SetTheme(_themeComboBox.SelectedItem?.ToString() ?? "Dark");
+            // Theme already saved on dropdown change - just ensure current value is persisted
+            var themeName = _themeComboBox.SelectedItem?.ToString() ?? "Dark";
+            SettingsManager.Current.UI.Theme = themeName;
+
             SettingsManager.SetFont(_fontFamilyComboBox.SelectedItem?.ToString() ?? "Consolas", (int)_fontSizeNumeric.Value);
             SettingsManager.SetHexViewUppercase(_hexUppercaseCheckBox.Checked);
             SettingsManager.SetHexBytesPerRow((int)_hexBytesPerRowNumeric.Value);
@@ -463,8 +486,9 @@ namespace ReverseEngineering.WinForms.Settings
 
         private void ThemeComboBox_SelectedIndexChanged(object? sender, EventArgs e)
         {
-            var selectedTheme = _themeComboBox.SelectedItem?.ToString() ?? "Dark";
-            var theme = selectedTheme switch
+            // Apply theme visually for live preview
+            var themeName = _themeComboBox.SelectedItem?.ToString() ?? "Dark";
+            var selectedTheme = themeName switch
             {
                 "Dark" => Themes.Dark,
                 "Light" => Themes.Light,
@@ -472,9 +496,53 @@ namespace ReverseEngineering.WinForms.Settings
                 "HackerGreen" => Themes.HackerGreen,
                 _ => Themes.Dark
             };
+
+            // Update ThemeManager current theme
+            ThemeManager._CurrentTheme = selectedTheme;
             
-            // Apply theme immediately to preview in dialog
-            ThemeManager.ApplyTheme(this, theme);
+            // Apply to dialog manually 
+            BackColor = ThemeManager.CurrentTheme.BackColor;
+            ForeColor = ThemeManager.CurrentTheme.ForeColor;
+            foreach (Control c in Controls)
+                ThemeManager.Apply(c);
+            Invalidate(true);
+
+            // Apply to parent form (owner)
+            if (this.Owner is Form parentForm)
+            {
+                ThemeManager.ApplyTheme(parentForm);
+                parentForm.Invalidate(true);
+                parentForm.Update();
+            }
+
+            // Do NOT save settings yet - only on OK button click
+        }
+
+        private void CancelThemePreview()
+        {
+            // Revert to original theme visually without saving
+            ThemeManager._CurrentTheme = _originalTheme;
+            
+            // Revert SettingsManager to original theme name
+            SettingsManager.Current.UI.Theme = _originalThemeName;
+            
+            // Reapply to dialog
+            BackColor = ThemeManager.CurrentTheme.BackColor;
+            ForeColor = ThemeManager.CurrentTheme.ForeColor;
+            foreach (Control c in Controls)
+                ThemeManager.Apply(c);
+            Invalidate(true);
+
+            // Reapply to parent form (owner)
+            if (this.Owner is Form parentForm)
+            {
+                ThemeManager.ApplyTheme(parentForm);
+                parentForm.Invalidate(true);
+                parentForm.Update();  // Force immediate repaint
+            }
+
+            Close();
         }
     }
 }
+

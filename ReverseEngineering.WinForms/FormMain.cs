@@ -5,6 +5,7 @@ using ReverseEngineering.WinForms.MainWindow;
 using ReverseEngineering.WinForms.LLM;
 using ReverseEngineering.WinForms.SymbolView;
 using ReverseEngineering.WinForms.GraphView;
+using ReverseEngineering.WinForms.StringView;
 using System;
 using System.Windows.Forms;
 
@@ -13,12 +14,16 @@ namespace ReverseEngineering.WinForms
     public partial class FormMain : Form
     {
         private readonly CoreEngine _core = new();
+        private SplitContainer? _verticalSplit;
 
         private readonly MainMenuController _menuController;
         private readonly ThemeMenuController _themeController;
         private readonly HexEditorController _hexController;
         private readonly DisassemblyController _disasmController;
         private readonly AnalysisController? _analysisController;
+        
+        private PEInfoControl? peInfoControl;
+        private StringsControl? stringsControl;
 
         public FormMain()
         {
@@ -29,6 +34,8 @@ namespace ReverseEngineering.WinForms
             // ---------------------------------------------------------
             symbolTree = new SymbolTreeControl(_core);
             graphControl = new GraphControl(_core);
+            peInfoControl = new PEInfoControl();
+            stringsControl = new StringsControl(_core);
 
             // ---------------------------------------------------------
             //  COMPOSE LAYOUT (after controls are initialized)
@@ -45,7 +52,7 @@ namespace ReverseEngineering.WinForms
             // ---------------------------------------------------------
             _disasmController = new DisassemblyController(disasmView, hexEditor, _core);
 
-            _analysisController = new AnalysisController(_core, symbolTree, graphControl, llmClient, llmPane);
+            _analysisController = new AnalysisController(_core, symbolTree, graphControl, llmClient, llmPane, null, stringsControl);
 
             _menuController = new MainMenuController(
                 this,
@@ -55,7 +62,10 @@ namespace ReverseEngineering.WinForms
                 _disasmController,
                 statusFile,
                 _core,
-                _analysisController
+                _analysisController,
+                null,
+                peInfoControl,
+                llmPane
             );
 
             _themeController = new ThemeMenuController(
@@ -80,9 +90,10 @@ namespace ReverseEngineering.WinForms
             disasmView.InstructionSelected += DisasmView_InstructionSelected;
 
             // ---------------------------------------------------------
-            //  DEFAULT THEME
+            //  INITIALIZE THEME
             // ---------------------------------------------------------
-            ThemeManager.ApplyTheme(this, Themes.Dark);
+            ThemeManager.Initialize();  // Load theme from settings
+            ThemeManager.ApplyTheme(this);  // Apply current theme
         }
 
         // ---------------------------------------------------------
@@ -99,28 +110,97 @@ namespace ReverseEngineering.WinForms
 
             logControl.Dock = DockStyle.Fill;
 
-            // Compose right side top: SymbolTree and GraphControl in tabs
-            var tabsTop = new TabControl { Dock = DockStyle.Fill };
-            tabsTop.TabPages.Add(new TabPage("Symbols") { Controls = { symbolTree } });
-            tabsTop.TabPages.Add(new TabPage("CFG") { Controls = { graphControl } });
-            splitRight.Panel1.Controls.Add(tabsTop);
+            // LEFT SIDE: Hex Editor + Disassembly in tabs
+            var leftTabs = new TabControl { Dock = DockStyle.Fill };
+            hexEditor.Dock = DockStyle.Fill;
+            disasmView.Dock = DockStyle.Fill;
+            
+            var hexPage = new TabPage("Hex Editor");
+            hexPage.Controls.Add(hexEditor);
+            leftTabs.TabPages.Add(hexPage);
+            
+            var disasmPage = new TabPage("Disassembly");
+            disasmPage.Controls.Add(disasmView);
+            leftTabs.TabPages.Add(disasmPage);
 
-            // Compose right side bottom: LLMPane and LogControl in tabs
-            var tabsBottom = new TabControl { Dock = DockStyle.Fill };
-            tabsBottom.TabPages.Add(new TabPage("LLM Analysis") { Controls = { llmPane } });
-            tabsBottom.TabPages.Add(new TabPage("Log") { Controls = { logControl } });
-            splitRight.Panel2.Controls.Add(tabsBottom);
+            var leftPanel = new Panel { Dock = DockStyle.Fill };
+            leftPanel.Controls.Add(leftTabs);
 
-            // Add patch panel on top of right side
-            var rightWithPatch = new Panel { Dock = DockStyle.Fill };
-            patchPanel.Dock = DockStyle.Top;
-            patchPanel.Height = 100;
-            rightWithPatch.Controls.Add(splitRight);
-            rightWithPatch.Controls.Add(patchPanel);
+            // RIGHT SIDE: Symbols, CFG, Strings, PE Info, and Log tabs
+            var rightTabs = new TabControl { Dock = DockStyle.Fill };
+            
+            var symbolsPage = new TabPage("Symbols");
+            symbolsPage.Controls.Add(symbolTree);
+            rightTabs.TabPages.Add(symbolsPage);
+            
+            var cfgPage = new TabPage("CFG");
+            cfgPage.Controls.Add(graphControl);
+            rightTabs.TabPages.Add(cfgPage);
+            
+            var stringsPage = new TabPage("Strings");
+            stringsControl!.Dock = DockStyle.Fill;
+            stringsPage.Controls.Add(stringsControl);
+            rightTabs.TabPages.Add(stringsPage);
+            
+            var peInfoPage = new TabPage("PE Info");
+            peInfoControl!.Dock = DockStyle.Fill;
+            peInfoPage.Controls.Add(peInfoControl);
+            rightTabs.TabPages.Add(peInfoPage);
+            
+            var logPage = new TabPage("Log");
+            logPage.Controls.Add(logControl);
+            rightTabs.TabPages.Add(logPage);
 
-            // Compose main layout
-            splitMain.Panel1.Controls.Add(splitLeft);
-            splitMain.Panel2.Controls.Add(rightWithPatch);
+            var rightPanel = new Panel { Dock = DockStyle.Fill };
+            rightPanel.Controls.Add(rightTabs);
+
+            // BOTTOM PANEL: AI Chat
+            var bottomTabs = new TabControl { Dock = DockStyle.Fill };
+            llmPane.Dock = DockStyle.Fill;
+            
+            var chatPage = new TabPage("AI Chat");
+            chatPage.Controls.Add(llmPane);
+            bottomTabs.TabPages.Add(chatPage);
+
+            var bottomPanel = new Panel { Dock = DockStyle.Fill };
+            bottomPanel.Controls.Add(bottomTabs);
+
+            // Configure main horizontal split (left/right content)
+            splitMain.Dock = DockStyle.Fill;
+            splitMain.Orientation = Orientation.Vertical;
+            splitMain.SplitterDistance = 700;  // Will be adjusted to 50/50 on form load
+            splitMain.Panel1.Controls.Add(leftPanel);
+            splitMain.Panel2.Controls.Add(rightPanel);
+
+            // Create vertical split: top (main content) and bottom (AI Chat)
+            _verticalSplit = new SplitContainer
+            {
+                Dock = DockStyle.Fill,
+                Orientation = Orientation.Horizontal,
+                SplitterDistance = 500  // Will be set properly on form load
+            };
+            _verticalSplit.Panel1.Controls.Add(splitMain);
+            _verticalSplit.Panel2.Controls.Add(bottomPanel);
+
+            // Clear form and add vertical split
+            this.Controls.Remove(splitMain);
+            this.Controls.Add(_verticalSplit);
+            this.Controls.Add(this.statusStrip1);
+            this.Controls.Add(this.menuStrip1);
+
+            // Set proper splitter distances on form load (50/50 left-right, 60% top content)
+            this.Load += (s, e) =>
+            {
+                if (_verticalSplit != null && _verticalSplit.Height > 0)
+                {
+                    _verticalSplit.SplitterDistance = (int)(_verticalSplit.Height * 0.6);
+                }
+                // Set left/right to 50/50
+                if (splitMain != null && splitMain.Width > 0)
+                {
+                    splitMain.SplitterDistance = splitMain.Width / 2;
+                }
+            };
         }
 
         // ---------------------------------------------------------
