@@ -141,15 +141,31 @@ namespace ReverseEngineering.Core
 
         public ulong OffsetToAddress(int offset)
         {
-            // Search disassembly for instruction at this offset
-            foreach (var ins in Disassembly)
+            // Binary search for instruction containing this offset (O(log n) instead of O(n))
+            int left = 0, right = Disassembly.Count - 1;
+            
+            while (left <= right)
             {
-                if (ins.FileOffset == offset)
-                    return ins.Address;
+                int mid = (left + right) / 2;
+                var ins = Disassembly[mid];
                 
-                // If offset is within this instruction, return the instruction address
-                if (ins.FileOffset < offset && offset < ins.FileOffset + ins.Length)
-                    return ins.Address + (ulong)(offset - ins.FileOffset);
+                if (offset == ins.FileOffset)
+                {
+                    return ins.Address;
+                }
+                else if (offset < ins.FileOffset)
+                {
+                    right = mid - 1;
+                }
+                else
+                {
+                    // offset > ins.FileOffset - check if it's within this instruction
+                    if (offset < ins.FileOffset + ins.Length)
+                    {
+                        return ins.Address + (ulong)(offset - ins.FileOffset);
+                    }
+                    left = mid + 1;
+                }
             }
             
             // Fallback: if no instruction found, use linear mapping (shouldn't happen for valid offsets)

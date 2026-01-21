@@ -188,6 +188,53 @@ namespace ReverseEngineering.WinForms
             this.Controls.Add(this.statusStrip1);
             this.Controls.Add(this.menuStrip1);
 
+            // Smart tab switching with view synchronization
+            // When switching tabs, scroll the destination view to show the same location
+            // as the view you're leaving - keeps context consistent
+            leftTabs.SelectedIndexChanged += (s, e) =>
+            {
+                SuspendLayout();
+                try
+                {
+                    if (leftTabs.SelectedIndex == 0)  // Switching to Hex Editor
+                    {
+                        // Sync hex editor to show the disassembly's current selection
+                        int selectedIdx = disasmView.SelectedIndex;
+                        if (selectedIdx >= 0 && selectedIdx < _core.Disassembly.Count)
+                        {
+                            ulong address = _core.Disassembly[selectedIdx].Address;
+                            int offset = _core.AddressToOffset(address);
+                            if (offset >= 0)
+                            {
+                                hexEditor.SetSelection(offset, offset);
+                                hexEditor.ScrollTo(offset);
+                            }
+                        }
+                        // Force immediate repaint
+                        hexEditor.ForceRepaint();
+                    }
+                    else if (leftTabs.SelectedIndex == 1)  // Switching to Disassembly
+                    {
+                        // Sync disassembly to show the hex editor's current selection
+                        var selArgs = hexEditor.GetSelection();
+                        if (selArgs != null && selArgs.SelectionLength > 0)
+                        {
+                            int offset = selArgs.CaretOffset;
+                            int index = _core.OffsetToInstructionIndex(offset);
+                            if (index >= 0)
+                            {
+                                disasmView.SelectInstruction(index);
+                                disasmView.EnsureVisible(index);
+                            }
+                        }
+                    }
+                }
+                finally
+                {
+                    ResumeLayout(false);
+                }
+            };
+
             // Set proper splitter distances on form load (50/50 left-right, 60% top content)
             this.Load += (s, e) =>
             {
@@ -249,8 +296,8 @@ namespace ReverseEngineering.WinForms
         {
             var menu = new ContextMenuStrip();
 
-            menu.Items.Add("Copy", null, (s, e) => disasmView.Copy());
-            menu.Items.Add("Paste", null, (s, e) => disasmView.Paste());
+            // Virtual disassembly viewer doesn't support copy/paste operations
+            // Users can use hex editor or analyze via selection
 
             return menu;
         }

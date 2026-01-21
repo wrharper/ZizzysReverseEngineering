@@ -394,8 +394,8 @@ namespace ReverseEngineering.WinForms.MainWindow
             // Clear LLM context for new binary
             _llmPane?.Clear();
 
-            // Show progress dialog while loading
-            using var progressDialog = new DisassemblyProgressDialog();
+            // Show progress dialog while loading AND populating UI with current theme
+            using var progressDialog = new DisassemblyProgressDialog(ThemeManager.CurrentTheme);
             bool dialogDisposed = false;
             bool cancelRequested = false;
             
@@ -405,7 +405,8 @@ namespace ReverseEngineering.WinForms.MainWindow
                 {
                     if (!dialogDisposed && !progressDialog.IsDisposed)
                     {
-                        progressDialog.UpdateProgress(processed, total);
+                        // Show 0-95% during binary load with detailed status
+                        progressDialog.UpdateProgress(processed, total, "Disassembling binary...");
                     }
                 }
                 catch (ObjectDisposedException)
@@ -416,6 +417,30 @@ namespace ReverseEngineering.WinForms.MainWindow
 
             try
             {
+                // Initialize UI immediately with physical addresses (hex editor ready first)
+                _suppressEvents = true;
+                try
+                {
+                    if (!progressDialog.IsDisposed)
+                        progressDialog.UpdateProgress(0, 100, "Loading hex editor...");
+                    
+                    // Load hex editor first with binary file (uses physical offsets, no disassembly needed)
+                    byte[] fileBytes = File.ReadAllBytes(ofd.FileName);
+                    _hex.SetBuffer(new HexBuffer(fileBytes));
+                    _hex.SetImageBase(0);  // Physical addresses (file offsets) initially
+                    // Don't set CoreEngine yet - that enables virtual address lookup
+                    
+                    // Initialize disassembly as empty
+                    _disasmController.Initialize();
+                    
+                    if (!progressDialog.IsDisposed)
+                        progressDialog.UpdateProgress(1, 100, "Starting disassembly...");
+                }
+                finally
+                {
+                    _suppressEvents = false;
+                }
+
                 // Load in background to keep UI responsive
                 var task = Task.Run(() => 
                 {
@@ -425,74 +450,81 @@ namespace ReverseEngineering.WinForms.MainWindow
                     }
                     finally
                     {
-                        // Close dialog when load completes (success or error)
-                        if (!dialogDisposed && !progressDialog.IsDisposed)
+                        // After load, update UI from main thread
+                        _form.Invoke(() =>
                         {
                             try
                             {
-                                progressDialog.Invoke(() => progressDialog.Close());
+                                if (!progressDialog.IsDisposed)
+                                    progressDialog.UpdateProgress(95, 100, "Switching to virtual addresses...");
+                                
+                                // Hex editor already has buffer from initial load
+                                // Just add CoreEngine reference to enable virtual address lookup
+                                _suppressEvents = true;
+                                _hex.SetCoreEngine(_core);
+                                _hex.SetImageBase(_core.ImageBase);
+                                
+                                if (!progressDialog.IsDisposed)
+                                    progressDialog.UpdateProgress(97, 100, "Loading disassembly view...");
+                                
+                                _disasmController.Load(_core);
+                                
+                                if (!progressDialog.IsDisposed)
+                                    progressDialog.UpdateProgress(99, 100, "Finalizing...");
+                                
+                                _suppressEvents = false;
+
+                                Logger.Info("UI", $"Loaded binary: {ofd.FileName}");
+                                _statusFile.Text = Path.GetFileName(ofd.FileName);
+
+                                // Load and display PE info
+                                if (_peInfoControl != null && _core.PEInfo != null)
+                                {
+                                    _peInfoControl.LoadPEInfo(_core.PEInfo);
+                                    Logger.Info("UI", $"PE: {(_core.PEInfo.Is64Bit ? "x64" : "x86")} @ 0x{_core.PEInfo.ImageBase:X}, Entry: 0x{_core.PEInfo.AddressOfEntryPoint:X}");
+                                }
+
+                                // Close dialog
+                                if (!progressDialog.IsDisposed)
+                                {
+                                    progressDialog.UpdateProgress(100, 100, "Complete!");
+                                    progressDialog.Close();
+                                }
                             }
-                            catch (ObjectDisposedException)
+                            catch (Exception ex)
                             {
-                                // Dialog already disposed
+                                Logger.Error("UI", $"Error during UI population: {ex.Message}");
+                                if (!progressDialog.IsDisposed)
+                                    progressDialog.Close();
+                                throw;
                             }
-                        }
+                        });
                     }
                 });
 
-                // Show dialog modally - will close when task completes or user cancels
-                var result = progressDialog.ShowDialog();
+                // Show dialog modally - will close when everything completes or user cancels
+                var result = progressDialog.ShowDialog(_form);
                 cancelRequested = (result == DialogResult.Cancel);
                 
-                // Only wait for task if not cancelled (give user back control quickly on cancel)
+                // Wait for load to complete
                 if (!cancelRequested)
                 {
-                    task.Wait();  // Wait for load to complete
+                    task.Wait();  // Wait for background load to finish
                 }
                 else
                 {
                     Logger.Info("UI", "Binary load cancelled by user");
-                    // Fall through to load UI with whatever has been decoded so far
                 }
             }
             finally
             {
-                // Clear callback BEFORE disposing dialog
+                // Clear callback
                 _core.OnDisassemblyProgress = null;
-                dialogDisposed = true;
             }
 
-            // Load UI even if cancelled - show partial results
-            if (_core.HexBuffer != null && _core.HexBuffer.Bytes.Length > 0)
+            if (cancelRequested && _core.HexBuffer != null && _core.HexBuffer.Bytes.Length > 0)
             {
-                _suppressEvents = true;
-                _hex.SetBuffer(_core.HexBuffer);
-                _hex.SetCoreEngine(_core);  // Pass CoreEngine for proper address mapping
-                _hex.SetImageBase(_core.ImageBase);
-                _disasmController.Load(_core);
-                _suppressEvents = false;
-
-                Logger.Info("UI", $"Loaded binary: {ofd.FileName}");
-                _statusFile.Text = Path.GetFileName(ofd.FileName);
-
-                // Load and display PE info
-                if (_peInfoControl != null && _core.PEInfo != null)
-                {
-                    _peInfoControl.LoadPEInfo(_core.PEInfo);
-                    Logger.Info("UI", $"PE: {(_core.PEInfo.Is64Bit ? "x64" : "x86")} @ 0x{_core.PEInfo.ImageBase:X}, Entry: 0x{_core.PEInfo.AddressOfEntryPoint:X}");
-                }
-
-                if (cancelRequested)
-                {
-                    Logger.Info("UI", $"Partial load: {_core.Disassembly.Count} instructions decoded before cancel");
-                }
-            }
-
-            // Load and display PE info
-            if (_peInfoControl != null && _core.PEInfo != null)
-            {
-                _peInfoControl.LoadPEInfo(_core.PEInfo);
-                Logger.Info("UI", $"PE: {(_core.PEInfo.Is64Bit ? "x64" : "x86")} @ 0x{_core.PEInfo.ImageBase:X}, Entry: 0x{_core.PEInfo.AddressOfEntryPoint:X}");
+                Logger.Info("UI", $"Partial load: {_core.Disassembly.Count} instructions decoded before cancel");
             }
 
             // Auto-run analysis if enabled in settings

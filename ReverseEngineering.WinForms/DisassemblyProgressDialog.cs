@@ -11,15 +11,52 @@ namespace ReverseEngineering.WinForms
     public partial class DisassemblyProgressDialog : Form
     {
         private bool _cancelRequested = false;
+        private AppTheme _theme;
 
         public bool CancelRequested => _cancelRequested;
 
-        public DisassemblyProgressDialog()
+        public DisassemblyProgressDialog(AppTheme? theme = null)
         {
             InitializeComponent();
             this.StartPosition = FormStartPosition.CenterParent;
             this.ControlBox = false;  // Disable close button
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
+            
+            _theme = theme ?? ThemeManager.CurrentTheme;
+            ApplyTheme(_theme);
+        }
+
+        private void ApplyTheme(AppTheme theme)
+        {
+            // Form colors
+            this.BackColor = theme.PanelColor;
+            this.ForeColor = theme.ForeColor;
+            
+            // Apply to all controls
+            foreach (Control ctrl in this.Controls)
+            {
+                ctrl.BackColor = theme.BackColor;
+                ctrl.ForeColor = theme.ForeColor;
+                
+                if (ctrl is Button btn)
+                {
+                    btn.BackColor = theme.ButtonBack;
+                    btn.ForeColor = theme.ButtonFore;
+                    btn.FlatStyle = FlatStyle.Flat;
+                    btn.FlatAppearance.BorderColor = theme.ButtonBorder;
+                    btn.FlatAppearance.BorderSize = 1;
+                }
+                else if (ctrl is ProgressBar pb)
+                {
+                    // ProgressBar is limited in theming, apply what we can
+                    pb.BackColor = theme.ProgressBarBack;
+                }
+                else if (ctrl is Label lbl)
+                {
+                    lbl.BackColor = theme.PanelColor;
+                    lbl.ForeColor = theme.ForeColor;
+                }
+            }
         }
 
         private void InitializeComponent()

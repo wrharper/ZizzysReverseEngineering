@@ -11,6 +11,12 @@ namespace ReverseEngineering.WinForms.HexEditor
         private readonly HexEditorSelection _sel;
         private readonly HexEditorControl _owner;
         private CoreEngine? _core;
+        
+        // Cache for address lookups - keyed by offset
+        private Dictionary<int, ulong>? _addressCache;
+        private int _cachedCoreVersion = -1;  // Invalidate cache when core changes
+        private ulong _lastComputedAddress = 0;  // Cache last computed address
+        private int _lastComputedOffset = -1;    // Offset of last computed address
 
         public HexEditorRenderer(HexEditorState state, HexEditorSelection selection, HexEditorControl owner)
         {
@@ -21,7 +27,27 @@ namespace ReverseEngineering.WinForms.HexEditor
 
         public void SetCoreEngine(CoreEngine? core)
         {
-            _core = core;
+            // Only update if actually switching to a different CoreEngine instance
+            if (_core != core)
+            {
+                _core = core;
+                
+                // Pre-build offset→address cache for fast lookups
+                // This is much faster than the linear search in CoreEngine.OffsetToAddress()
+                _addressCache = new Dictionary<int, ulong>();
+                if (core != null && core.Disassembly.Count > 0)
+                {
+                    // Build cache from disassembly (O(n) one-time cost)
+                    foreach (var ins in core.Disassembly)
+                    {
+                        _addressCache[ins.FileOffset] = ins.Address;
+                    }
+                }
+                
+                _cachedCoreVersion = core?.Disassembly.Count ?? 0;
+                _lastComputedOffset = -1;
+                _lastComputedAddress = 0;
+            }
         }
 
         public void Paint(Graphics g, Rectangle clip)
@@ -55,13 +81,31 @@ namespace ReverseEngineering.WinForms.HexEditor
 
         private void DrawOffset(Graphics g, int offset, int y)
         {
-            // Convert file offset to virtual address
+            // Convert file offset to virtual address with two-tier caching
             ulong virtualAddress;
             
-            if (_core != null && _core.Disassembly.Count > 0)
+            if (_core != null && _addressCache != null && _addressCache.Count > 0)
             {
-                // Use CoreEngine to properly map offset to address via disassembly
-                virtualAddress = _core.OffsetToAddress(offset);
+                // Check single-value cache first (most common: sequential row draws)
+                if (offset == _lastComputedOffset)
+                {
+                    virtualAddress = _lastComputedAddress;
+                }
+                // Try dictionary cache (pre-built in SetCoreEngine)
+                else if (_addressCache.TryGetValue(offset, out virtualAddress))
+                {
+                    // Cache hit - update single-value cache
+                    _lastComputedOffset = offset;
+                    _lastComputedAddress = virtualAddress;
+                }
+                // Cache miss - fall back to expensive linear search (rare for valid offsets)
+                else
+                {
+                    virtualAddress = _core.OffsetToAddress(offset);
+                    _addressCache[offset] = virtualAddress;
+                    _lastComputedOffset = offset;
+                    _lastComputedAddress = virtualAddress;
+                }
             }
             else
             {

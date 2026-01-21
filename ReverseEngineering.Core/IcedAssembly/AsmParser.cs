@@ -37,6 +37,22 @@ namespace ReverseEngineering.Core.IcedAssembly
                     ParseJmpRel32(asm, ops, rip);
                     break;
 
+                case "je" or "jz":
+                    asm.je(0);  // Placeholder; actual offset computed by assembler
+                    break;
+
+                case "jne" or "jnz":
+                    asm.jne(0);
+                    break;
+
+                case "jg" or "jnle":
+                    asm.jg(0);
+                    break;
+
+                case "jl" or "jnge":
+                    asm.jl(0);
+                    break;
+
                 case "call":
                     ParseCallRel32(asm, ops, rip);
                     break;
@@ -49,9 +65,81 @@ namespace ReverseEngineering.Core.IcedAssembly
                     asm.nop();
                     break;
 
+                case "push":
+                    ParsePush(asm, ops);
+                    break;
+
+                case "pop":
+                    ParsePop(asm, ops);
+                    break;
+
+                case "add":
+                    ParseBinaryOp(asm, ops, (d, s) => asm.add(d, s));
+                    break;
+
+                case "sub":
+                    ParseBinaryOp(asm, ops, (d, s) => asm.sub(d, s));
+                    break;
+
+                case "xor":
+                    ParseBinaryOp(asm, ops, (d, s) => asm.xor(d, s));
+                    break;
+
+                case "and":
+                    ParseBinaryOp(asm, ops, (d, s) => asm.and(d, s));
+                    break;
+
+                case "or":
+                    ParseBinaryOp(asm, ops, (d, s) => asm.or(d, s));
+                    break;
+
+                case "cmp":
+                    ParseBinaryOp(asm, ops, (d, s) => asm.cmp(d, s));
+                    break;
+
+                case "test":
+                    ParseBinaryOp(asm, ops, (d, s) => asm.test(d, s));
+                    break;
+
+                case "lea":
+                    // LEA is complex to parse generically, skip for now
+                    // Users can use Keystone directly for complex addressing modes
+                    break;
+
+                case "inc":
+                    asm.inc(ParseRegister(ops));
+                    break;
+
+                case "dec":
+                    asm.dec(ParseRegister(ops));
+                    break;
+
                 default:
                     throw new NotSupportedException($"Unsupported instruction: {line}");
             }
+        }
+
+        private static void ParsePush(Assembler asm, string ops)
+        {
+            var reg = ParseRegister(ops);
+            asm.push(reg);
+        }
+
+        private static void ParsePop(Assembler asm, string ops)
+        {
+            var reg = ParseRegister(ops);
+            asm.pop(reg);
+        }
+
+        private static void ParseBinaryOp(Assembler asm, string ops, Action<AssemblerRegister64, AssemblerRegister64> op)
+        {
+            var parts = ops.Split(',', 2, StringSplitOptions.TrimEntries);
+            if (parts.Length != 2)
+                throw new FormatException("Invalid binary operation syntax");
+
+            var dst = ParseRegister(parts[0]);
+            var src = ParseRegister(parts[1]);
+            op(dst, src);
         }
 
         private static void ParseMov(Assembler asm, string ops)

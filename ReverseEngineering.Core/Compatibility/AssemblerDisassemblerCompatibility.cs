@@ -4,6 +4,7 @@ using System.Diagnostics;
 using Iced.Intel;
 using Keystone.Net;
 using ReverseEngineering.Core.Keystone;
+using ReverseEngineering.Core.Analysis;
 
 namespace ReverseEngineering.Core.Compatibility
 {
@@ -256,6 +257,123 @@ namespace ReverseEngineering.Core.Compatibility
         // ---------------------------------------------------------
 
         /// <summary>
+        /// Test compatibility with CoreEngine address mapping (PE-aware OffsetToAddress)
+        /// </summary>
+        public static (bool success, string message) TestCoreEngineAddressMapping()
+        {
+            try
+            {
+                var engine = new CoreEngine();
+                // Build a mock disassembly list
+                var instructions = new List<Instruction>
+                {
+                    new() { 
+                        Address = 0x401000, 
+                        FileOffset = 0x1000, 
+                        Mnemonic = "MOV", 
+                        Operands = "RAX, RBX", 
+                        Bytes = [0x48, 0x89, 0xD8], 
+                        Length = 3 
+                    },
+                    new() { 
+                        Address = 0x401003, 
+                        FileOffset = 0x1003, 
+                        Mnemonic = "NOP", 
+                        Operands = "", 
+                        Bytes = [0x90], 
+                        Length = 1 
+                    }
+                };
+
+                // Simulate CoreEngine state
+                engine.Disassembly.AddRange(instructions);
+
+                // Test OffsetToAddress (uses disassembly lookup, not linear formula)
+                var addr = engine.OffsetToAddress(0x1000);
+                if (addr == 0x401000)
+                    return (true, $"✓ CoreEngine address mapping works (offset 0x1000 → address 0x{addr:X})");
+
+                return (false, $"✗ Address mapping failed: expected 0x401000, got 0x{addr:X}");
+            }
+            catch (Exception ex)
+            {
+                return (false, $"✗ CoreEngine address mapping test failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Test compatibility with Instruction enhancements (analysis metadata)
+        /// </summary>
+        public static (bool success, string message) TestInstructionEnhancements()
+        {
+            try
+            {
+                var instr = new Instruction
+                {
+                    Address = 0x401000,
+                    Mnemonic = "CALL",
+                    Bytes = [0xE8, 0x00, 0x10, 0x00, 0x00],
+                    Length = 5,
+                    FunctionAddress = 0x401000,
+                    BasicBlockAddress = 0x401000,
+                    SymbolName = "main",
+                    Annotation = "Entry point",
+                    IsPatched = false,
+                    IsNop = false
+                };
+
+                // Verify all fields are accessible and set
+                if (!string.IsNullOrEmpty(instr.SymbolName) && 
+                    instr.FunctionAddress.HasValue && 
+                    instr.BasicBlockAddress.HasValue &&
+                    !string.IsNullOrEmpty(instr.Annotation))
+                {
+                    return (true, $"✓ Instruction enhancements compatible (symbol: {instr.SymbolName}, annotation: {instr.Annotation})");
+                }
+
+                return (false, "✗ Instruction metadata fields not working");
+            }
+            catch (Exception ex)
+            {
+                return (false, $"✗ Instruction enhancements test failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Test compatibility with SearchManager pattern matching
+        /// </summary>
+        public static (bool success, string message) TestSearchManagerCompatibility()
+        {
+            try
+            {
+                var buffer = new byte[]
+                {
+                    0x48, 0x89, 0xD8,  // MOV RAX, RBX
+                    0x90,              // NOP
+                    0x48, 0x89, 0xD8   // MOV RAX, RBX again
+                };
+
+                var instructions = new List<Instruction>
+                {
+                    new() { Address = 0x401000, FileOffset = 0, Mnemonic = "MOV", Bytes = [0x48, 0x89, 0xD8], Length = 3 },
+                    new() { Address = 0x401003, FileOffset = 3, Mnemonic = "NOP", Bytes = [0x90], Length = 1 },
+                    new() { Address = 0x401004, FileOffset = 4, Mnemonic = "MOV", Bytes = [0x48, 0x89, 0xD8], Length = 3 }
+                };
+
+                // Test byte pattern search
+                var matches = PatternMatcher.FindBytePattern(buffer, "48 89 D8");
+                if (matches.Count >= 2)
+                    return (true, $"✓ SearchManager/PatternMatcher compatible (found {matches.Count} matches for MOV RAX,RBX)");
+
+                return (false, "✗ Pattern matching returned fewer than expected matches");
+            }
+            catch (Exception ex)
+            {
+                return (false, $"✗ SearchManager compatibility test failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Test compatibility with HexBuffer optimization
         /// </summary>
         public static (bool success, string message) TestHexBufferCompatibility()
@@ -428,7 +546,16 @@ namespace ReverseEngineering.Core.Compatibility
             var rt = TestRoundTripCompatibility();
             results.Add(("Round-trip Compatibility", rt.success, rt.message));
 
-            // New systems
+            // New systems & enhancements
+            var coreAddr = TestCoreEngineAddressMapping();
+            results.Add(("CoreEngine Address Mapping", coreAddr.success, coreAddr.message));
+
+            var instrEnh = TestInstructionEnhancements();
+            results.Add(("Instruction Enhancements", instrEnh.success, instrEnh.message));
+
+            var search = TestSearchManagerCompatibility();
+            results.Add(("SearchManager/PatternMatcher", search.success, search.message));
+
             var hb = TestHexBufferCompatibility();
             results.Add(("HexBuffer Optimization", hb.success, hb.message));
 

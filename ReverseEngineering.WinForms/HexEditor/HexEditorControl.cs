@@ -17,6 +17,8 @@ namespace ReverseEngineering.WinForms.HexEditor
         private readonly HexEditorSelection _selection;
 
         private bool _dragging;
+        private bool _suppressPaint = false;  // Suppress paints during tab switches
+        private System.Windows.Forms.Timer? _repaintDebounceTimer;  // Debounce multiple repaints during tab switch
         private CoreEngine? _core;
 
         public event EventHandler<HexSelectionChangedEventArgs>? SelectionChanged;
@@ -137,26 +139,42 @@ namespace ReverseEngineering.WinForms.HexEditor
 
         public void SetCoreEngine(CoreEngine? core)
         {
-            _core = core;
-            _renderer.SetCoreEngine(core);
+            // Only update if actually a different CoreEngine instance
+            if (_core != core)
+            {
+                _core = core;
+                _renderer.SetCoreEngine(core);
+            }
         }
 
         /// <summary>
-        /// Navigate to a virtual address in the hex editor.
+        /// Navigate to a physical file offset or virtual address in the hex editor.
+        /// If CoreEngine is available (disassembly loaded), treats address as virtual.
+        /// Otherwise treats it as a physical file offset.
         /// </summary>
         public void GoToAddress(ulong address)
         {
-            if (_core == null || _core.Disassembly.Count == 0)
-            {
-                MessageBox.Show("Disassembly not available. Cannot navigate to address.");
-                return;
-            }
+            int offset;
 
-            int offset = _core.AddressToOffset(address);
-            if (offset < 0)
+            if (_core != null && _core.Disassembly.Count > 0)
             {
-                MessageBox.Show("Address not found in disassembly.");
-                return;
+                // Disassembly is loaded - treat input as virtual address
+                offset = _core.AddressToOffset(address);
+                if (offset < 0)
+                {
+                    MessageBox.Show("Virtual address not found in disassembly mapping.");
+                    return;
+                }
+            }
+            else
+            {
+                // No disassembly - treat input as physical file offset
+                offset = (int)address;
+                if (offset < 0 || offset >= _state.Buffer?.Bytes.Length)
+                {
+                    MessageBox.Show("File offset out of range.");
+                    return;
+                }
             }
 
             // Calculate scroll position
@@ -180,12 +198,24 @@ namespace ReverseEngineering.WinForms.HexEditor
 
         /// <summary>
         /// Show Go To Address dialog and navigate.
+        /// Dialog changes hint based on disassembly availability.
         /// </summary>
         public void ShowGoToDialog()
         {
-            using var dialog = new GoToAddressDialog(_core != null && _state.CaretIndex >= 0 
-                ? _core.OffsetToAddress(_state.CaretIndex) 
-                : 0);
+            // Determine if disassembly is loaded
+            bool hasDisassembly = _core != null && _core.Disassembly.Count > 0;
+            
+            // Get current address or offset for dialog
+            ulong current = 0;
+            if (_state.CaretIndex >= 0)
+            {
+                if (hasDisassembly)
+                    current = _core!.OffsetToAddress(_state.CaretIndex);
+                else
+                    current = (ulong)_state.CaretIndex;
+            }
+
+            using var dialog = new GoToAddressDialog(current, isVirtual: hasDisassembly);
 
             if (dialog.ShowDialog() == DialogResult.OK)
             {
@@ -232,7 +262,61 @@ namespace ReverseEngineering.WinForms.HexEditor
 
         protected override void OnPaint(PaintEventArgs e)
         {
+            // Skip painting if suppressed (during tab switches)
+            if (_suppressPaint)
+                return;
+                
             _renderer.Paint(e.Graphics, ClientRectangle);
+        }
+
+        /// <summary>
+        /// <summary>
+        /// Called when visibility changes - suppress paint during transition, resume after
+        /// </summary>
+        protected override void OnVisibleChanged(EventArgs e)
+        {
+            base.OnVisibleChanged(e);
+            
+            if (Visible)
+            {
+                // Recalculate scroll metrics immediately when becoming visible
+                if (_state.Buffer != null)
+                {
+                    UpdateScroll();
+                }
+                
+                // Resume painting after a brief delay to let tab animation complete
+                _suppressPaint = false;
+                
+                // Debounce repaint requests to prevent multiple renders during tab transition
+                _repaintDebounceTimer?.Dispose();
+                _repaintDebounceTimer = new System.Windows.Forms.Timer();
+                _repaintDebounceTimer.Interval = 50;  // Wait 50ms for all tab animations to settle
+                _repaintDebounceTimer.Tick += (s, args) =>
+                {
+                    _repaintDebounceTimer?.Dispose();
+                    _repaintDebounceTimer = null;
+                    ForceRepaint();
+                };
+                _repaintDebounceTimer.Start();
+            }
+            else
+            {
+                // Suppress painting while hidden to avoid wasted work
+                _suppressPaint = true;
+                _repaintDebounceTimer?.Dispose();
+                _repaintDebounceTimer = null;
+            }
+        }
+
+        /// <summary>
+        /// Force a full repaint - call this after tab becomes visible
+        /// </summary>
+        public void ForceRepaint()
+        {
+            _suppressPaint = false;
+            Invalidate(true);  // Force complete redraw
+            Update();  // Immediately paint instead of queuing
         }
 
         public HexBuffer? Buffer => _state.Buffer;
@@ -259,6 +343,18 @@ namespace ReverseEngineering.WinForms.HexEditor
         {
             _selection.SetSelection(start, end);
             Invalidate();
+        }
+
+        /// <summary>
+        /// Get current selection as HexSelectionChangedEventArgs for syncing views
+        /// </summary>
+        public HexSelectionChangedEventArgs? GetSelection()
+        {
+            if (_state.CaretIndex < 0)
+                return null;
+            
+            int length = _selection.GetSelectionLength();
+            return new HexSelectionChangedEventArgs(_state.CaretIndex, length);
         }
 
         public void CopyOffset()
@@ -386,6 +482,15 @@ namespace ReverseEngineering.WinForms.HexEditor
 
             _state.ScrollOffsetY = y;
             Invalidate();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _repaintDebounceTimer?.Dispose();
+            }
+            base.Dispose(disposing);
         }
     }
 }

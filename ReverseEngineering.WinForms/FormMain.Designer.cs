@@ -20,7 +20,7 @@ namespace ReverseEngineering.WinForms
         private SplitContainer splitRight;
 
         private HexEditorControl hexEditor;
-        private DisassemblyControl disasmView;
+        private DisassemblyViewerVirtual disasmView;
         private PatchPanel patchPanel;
         private LogControl logControl;
         private SymbolTreeControl symbolTree;
@@ -40,7 +40,7 @@ namespace ReverseEngineering.WinForms
             this.splitRight = new SplitContainer();
 
             this.hexEditor = new HexEditorControl();
-            this.disasmView = new DisassemblyControl();
+            this.disasmView = new DisassemblyViewerVirtual();
             this.patchPanel = new PatchPanel();
             this.logControl = new LogControl();
             this.symbolTree = null!;  // Will be initialized in FormMain.cs after CoreEngine is ready
