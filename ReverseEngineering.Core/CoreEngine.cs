@@ -272,19 +272,6 @@ namespace ReverseEngineering.Core
                 }
             }
         }
-        public static byte[]? Assemble(Assembler asm, ulong address)
-        {
-            try
-            {
-                var writer = new CodeWriterImpl();
-                asm.Assemble(writer, address);
-                return writer.ToArray();
-            }
-            catch
-            {
-                return null; // invalid ASM or assemble failure
-            }
-        }
 
         // ---------------------------------------------------------
         //  SINGLE INSTRUCTION DISASSEMBLY

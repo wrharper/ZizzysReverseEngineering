@@ -49,18 +49,5 @@ namespace ReverseEngineering.Core.ProjectSystem
             string json = JsonSerializer.Serialize(patches, options);
             File.WriteAllText(path, json);
         }
-
-        // ---------------------------------------------------------
-        //  FUTURE: EXPORT AS IPS/BPS/UPS
-        // ---------------------------------------------------------
-        public static void ExportIPS(string path, List<PatchEntry> patches)
-        {
-            throw new NotImplementedException("IPS export not implemented yet.");
-        }
-
-        public static void ExportBPS(string path, List<PatchEntry> patches)
-        {
-            throw new NotImplementedException("BPS export not implemented yet.");
-        }
     }
 }
