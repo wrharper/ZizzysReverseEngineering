@@ -8,7 +8,12 @@ namespace ReverseEngineering.Core
 {
     public static class Disassembler
     {
-        public static List<ReverseEngineering.Core.Instruction> DecodePE(byte[] fileBytes)
+        /// <summary>
+        /// Progress callback: (instructionsProcessed, totalEstimate)
+        /// </summary>
+        public delegate void ProgressCallback(int processed, int total);
+
+        public static List<ReverseEngineering.Core.Instruction> DecodePE(byte[] fileBytes, ProgressCallback? onProgress = null)
         {
             var result = new List<ReverseEngineering.Core.Instruction>();
 
@@ -121,84 +126,136 @@ namespace ReverseEngineering.Core
             }
 
             // ---------------------------------------------------------
-            //  FIND EXECUTABLE SECTION
+            //  FIND ALL EXECUTABLE SECTIONS
             // ---------------------------------------------------------
             const uint IMAGE_SCN_MEM_EXECUTE = 0x20000000;
 
-            int textIndex = sections.FindIndex(s => (s.Characteristics & IMAGE_SCN_MEM_EXECUTE) != 0);
-            if (textIndex < 0)
-                throw new Exception("No executable section found.");
-
-            var text = sections[textIndex];
-
-            // ---------------------------------------------------------
-            //  EXTRACT CODE BYTES
-            // ---------------------------------------------------------
-            byte[] code = new byte[text.RawSize];
-            Array.Copy(fileBytes, text.RawOffset, code, 0, text.RawSize);
-
-            // ---------------------------------------------------------
-            //  DECODE USING ICED
-            // ---------------------------------------------------------
-            var codeReader = new ByteArrayCodeReader(code);
-            var decoder = Iced.Intel.Decoder.Create(is64 ? 64 : 32, codeReader);
-
-            ulong sectionVA = imageBase + text.RVA;
-            decoder.IP = sectionVA;
-
-            var formatter = new NasmFormatter();
-            var output = new StringOutput();
-
-            while (codeReader.CanReadByte)
+            var executableSections = new List<(SectionInfo section, int index)>();
+            for (int i = 0; i < sections.Count; i++)
             {
-                ulong currentIP = decoder.IP;
-
-                var icedIns = decoder.Decode();
-                if (icedIns.Code == Code.INVALID)
-                    break;
-
-                output.Reset();
-                formatter.Format(icedIns, output);
-
-                string formatted = output.ToString();
-                int space = formatted.IndexOf(' ');
-                string mnemonic = space > 0 ? formatted[..space] : formatted;
-                string operands = space > 0 ? formatted[(space + 1)..] : "";
-
-                int offsetInSection = (int)(currentIP - sectionVA);
-
-                byte[] insBytes = new byte[icedIns.Length];
-                Array.Copy(code, offsetInSection, insBytes, 0, icedIns.Length);
-
-                // ---------------------------------------------------------
-                //  BUILD INSTRUCTION OBJECT
-                // ---------------------------------------------------------
-                var ins = new ReverseEngineering.Core.Instruction
+                if ((sections[i].Characteristics & IMAGE_SCN_MEM_EXECUTE) != 0)
                 {
-                    Raw = icedIns,
-                    Address = currentIP,
-                    RVA = (uint)(currentIP - imageBase),
-                    FileOffset = (int)(text.RawOffset + offsetInSection),
-                    SectionIndex = textIndex,
+                    executableSections.Add((sections[i], i));
+                }
+            }
 
-                    Mnemonic = mnemonic,
-                    Operands = operands,
+            if (executableSections.Count == 0)
+                throw new Exception("No executable sections found.");
 
-                    Length = icedIns.Length,
-                    Bytes = insBytes,
+            // ---------------------------------------------------------
+            //  DECODE ALL EXECUTABLE SECTIONS
+            // ---------------------------------------------------------
+            // Calculate total bytes to process across all executable sections
+            long totalBytesToProcess = 0;
+            foreach (var (section, _) in executableSections)
+            {
+                totalBytesToProcess += section.RawSize;
+            }
 
-                    IsCall = icedIns.FlowControl == FlowControl.Call,
-                    IsJump = icedIns.FlowControl == FlowControl.UnconditionalBranch,
-                    IsConditionalJump = icedIns.FlowControl == FlowControl.ConditionalBranch,
-                    IsReturn = icedIns.FlowControl == FlowControl.Return,
-                    IsNop = icedIns.Mnemonic == Mnemonic.Nop
-                };
+            long bytesProcessed = 0;
 
-                result.Add(ins);
+            foreach (var (sectionInfo, sectionIndex) in executableSections)
+            {
+                // Extract code bytes for this section
+                byte[] code = new byte[sectionInfo.RawSize];
+                Array.Copy(fileBytes, sectionInfo.RawOffset, code, 0, sectionInfo.RawSize);
+
+                // Decode using Iced
+                var codeReader = new ByteArrayCodeReader(code);
+                var decoder = Iced.Intel.Decoder.Create(is64 ? 64 : 32, codeReader);
+
+                ulong sectionVA = imageBase + sectionInfo.RVA;
+                decoder.IP = sectionVA;
+
+                var formatter = new NasmFormatter();
+                var output = new StringOutput();
+
+                int instructionsInSection = 0;
+                int lastProgressReport = 0;
+
+                while (codeReader.CanReadByte)
+                {
+                    ulong currentIP = decoder.IP;
+
+                    var icedIns = decoder.Decode();
+                    if (icedIns.Code == Code.INVALID)
+                    {
+                        // Skip invalid/padding bytes (common in code sections)
+                        decoder.IP += 1;
+                        continue;
+                    }
+
+                    output.Reset();
+                    formatter.Format(icedIns, output);
+
+                    string formatted = output.ToString();
+                    int space = formatted.IndexOf(' ');
+                    string mnemonic = space > 0 ? formatted[..space] : formatted;
+                    string operands = space > 0 ? formatted[(space + 1)..] : "";
+
+                    int offsetInSection = (int)(currentIP - sectionVA);
+
+                    // Validate we have enough bytes left in the section
+                    int bytesToCopy = Math.Min(icedIns.Length, (int)(code.Length - offsetInSection));
+                    if (bytesToCopy <= 0)
+                        continue;
+
+                    byte[] insBytes = new byte[bytesToCopy];
+                    Array.Copy(code, offsetInSection, insBytes, 0, bytesToCopy);
+
+                    // Build instruction object
+                    var ins = new ReverseEngineering.Core.Instruction
+                    {
+                        Raw = icedIns,
+                        Address = currentIP,
+                        RVA = (uint)(currentIP - imageBase),
+                        FileOffset = (int)(sectionInfo.RawOffset + offsetInSection),
+                        SectionIndex = sectionIndex,
+                        SectionName = sectionInfo.Name,
+
+                        Mnemonic = mnemonic,
+                        Operands = operands,
+
+                        Length = bytesToCopy,
+                        Bytes = insBytes,
+
+                        IsCall = icedIns.FlowControl == FlowControl.Call,
+                        IsJump = icedIns.FlowControl == FlowControl.UnconditionalBranch,
+                        IsConditionalJump = icedIns.FlowControl == FlowControl.ConditionalBranch,
+                        IsReturn = icedIns.FlowControl == FlowControl.Return,
+                        IsNop = icedIns.Mnemonic == Mnemonic.Nop
+                    };
+
+                    result.Add(ins);
+                    instructionsInSection++;
+
+                    // Report progress every 50 instructions based on bytes processed
+                    if (instructionsInSection - lastProgressReport >= 50)
+                    {
+                        lastProgressReport = instructionsInSection;
+                        // Calculate progress based on bytes processed vs total bytes
+                        long currentBytesInSection = bytesProcessed + offsetInSection;
+                        int progressPercent = totalBytesToProcess > 0 
+                            ? (int)((currentBytesInSection * 100) / totalBytesToProcess)
+                            : 0;
+                        // Report as (percentage, 100) for easier scaling
+                        onProgress?.Invoke(progressPercent, 100);
+                    }
+                }
+
+                // Update bytes processed after completing this section
+                bytesProcessed += sectionInfo.RawSize;
+
+                // Report progress after section complete
+                int sectionProgressPercent = totalBytesToProcess > 0 
+                    ? (int)((bytesProcessed * 100) / totalBytesToProcess)
+                    : 0;
+                onProgress?.Invoke(sectionProgressPercent, 100);
             }
 
             return result;
         }
+
         public static Instruction DecodeSingleInstruction(byte[] bytes, int offset, ulong address, bool is64Bit)
         {
             var reader = new ByteArrayCodeReader(bytes)

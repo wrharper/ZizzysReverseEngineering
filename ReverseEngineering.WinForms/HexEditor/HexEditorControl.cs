@@ -126,11 +126,20 @@ namespace ReverseEngineering.WinForms.HexEditor
             _state.CharWidth = (int)Math.Ceiling(size.Width);
             _state.LineHeight = (int)Math.Ceiling(size.Height);
 
-            _state.OffsetColumnWidth = _state.CharWidth * 8 + 10;
+            _state.OffsetColumnWidth = _state.CharWidth * 16 + 10;  // Increased for 16-char addresses
             _state.HexColumnWidth = _state.CharWidth * (HexEditorState.BytesPerRow * 3) + 20;
             _state.AsciiColumnWidth = _state.CharWidth * HexEditorState.BytesPerRow + 20;
 
             UpdateScroll();
+            Invalidate();
+        }
+
+        /// <summary>
+        /// Set the image base for virtual address display in hex editor.
+        /// </summary>
+        public void SetImageBase(ulong imageBase)
+        {
+            _state.ImageBase = imageBase;
             Invalidate();
         }
 

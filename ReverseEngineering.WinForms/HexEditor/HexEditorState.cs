@@ -10,6 +10,7 @@ namespace ReverseEngineering.WinForms.HexEditor
         //  BUFFER + MODIFIED TRACKING
         // ---------------------------------------------------------
         public HexBuffer? Buffer;
+        public ulong ImageBase = 0x140000000;  // Default PE image base (x64)
 
         // ---------------------------------------------------------
         //  LAYOUT METRICS

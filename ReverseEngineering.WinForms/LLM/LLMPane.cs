@@ -16,6 +16,7 @@ namespace ReverseEngineering.WinForms.LLM
         private Button _sendButton;
         private Label _statusLabel;
         private bool _isProcessing;
+        private bool _isStreaming;  // Track if currently receiving streamed response
 
         public event EventHandler<QueryEventArgs>? UserQuery;
 
@@ -144,6 +145,45 @@ namespace ReverseEngineering.WinForms.LLM
             _sendButton.Enabled = true;
         }
 
+        /// <summary>
+        /// Start streaming response display (called before receiving chunks)
+        /// </summary>
+        public void StartStreamingResponse()
+        {
+            _isStreaming = true;
+            _conversationBox.SelectionColor = System.Drawing.Color.LimeGreen;
+            _conversationBox.SelectionFont = new System.Drawing.Font(_conversationBox.Font, System.Drawing.FontStyle.Bold);
+            _conversationBox.AppendText("\n[AI]: ");
+            _conversationBox.SelectionColor = ThemeManager.CurrentTheme.ForeColor;
+            _conversationBox.SelectionFont = new System.Drawing.Font(_conversationBox.Font, System.Drawing.FontStyle.Regular);
+        }
+
+        /// <summary>
+        /// Append a streamed chunk to the response (called for each received chunk)
+        /// </summary>
+        public void AppendStreamedChunk(string chunk)
+        {
+            if (!_isStreaming)
+                StartStreamingResponse();
+
+            _conversationBox.AppendText(chunk);
+            _conversationBox.ScrollToCaret(); // Auto-scroll as new content arrives
+        }
+
+        /// <summary>
+        /// Finish streaming response display (called when streaming is complete)
+        /// </summary>
+        public void FinishStreamingResponse()
+        {
+            _isStreaming = false;
+            _conversationBox.AppendText("\n");
+
+            _statusLabel.ForeColor = System.Drawing.SystemColors.GrayText;
+            _statusLabel.Text = "Ready";
+            _isProcessing = false;
+            _sendButton.Enabled = true;
+        }
+
         public void DisplayError(string error)
         {
             _conversationBox.SelectionColor = System.Drawing.Color.Red;
@@ -161,7 +201,7 @@ namespace ReverseEngineering.WinForms.LLM
 
         public void SetAnalyzing(string task)
         {
-            _statusLabel.Text = $"Processing: {task}...";
+            _statusLabel.Text = task;
             _statusLabel.ForeColor = System.Drawing.Color.Blue;
             _isProcessing = true;
             _sendButton.Enabled = false;

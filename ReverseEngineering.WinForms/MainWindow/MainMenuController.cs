@@ -11,6 +11,7 @@ using ReverseEngineering.WinForms.HexEditor;
 using ReverseEngineering.WinForms.LLM;
 using ReverseEngineering.WinForms.AILogs;
 using ReverseEngineering.WinForms.Compatibility;
+using ReverseEngineering.WinForms;
 
 namespace ReverseEngineering.WinForms.MainWindow
 {
@@ -101,6 +102,17 @@ namespace ReverseEngineering.WinForms.MainWindow
             _menu.Items.Add(edit);
 
             // ---------------------------------------------------------
+            //  NAVIGATE MENU (Go To Address, etc.)
+            // ---------------------------------------------------------
+            var navigate = new ToolStripMenuItem("Navigate");
+
+            var goToAddressItem = new ToolStripMenuItem("Go to Address...", null, GoToAddressClick);
+            goToAddressItem.ShortcutKeys = Keys.Control | Keys.G;
+            navigate.DropDownItems.Add(goToAddressItem);
+
+            _menu.Items.Add(navigate);
+
+            // ---------------------------------------------------------
             //  ANALYSIS MENU
             // ---------------------------------------------------------
             if (_analysisController != null)
@@ -186,7 +198,6 @@ namespace ReverseEngineering.WinForms.MainWindow
                     : "Redo";
             }
         }
-
         private void UndoClick(object? s, EventArgs e)
         {
             _core.UndoRedo.Undo();
@@ -228,6 +239,90 @@ namespace ReverseEngineering.WinForms.MainWindow
                 }
             };
             searchDialog.Show(_form);
+        }
+
+        private void GoToAddressClick(object? s, EventArgs e)
+        {
+            var dialog = new Form
+            {
+                Text = "Go to Address",
+                Width = 400,
+                Height = 150,
+                StartPosition = FormStartPosition.CenterParent,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false,
+                MinimizeBox = false
+            };
+
+            var label = new Label
+            {
+                Text = "Enter address (hex, e.g. 0x140001000):",
+                Location = new System.Drawing.Point(10, 10),
+                Width = 370
+            };
+
+            var textBox = new TextBox
+            {
+                Location = new System.Drawing.Point(10, 40),
+                Width = 370,
+                Height = 30
+            };
+
+            var okButton = new Button
+            {
+                Text = "Go",
+                DialogResult = DialogResult.OK,
+                Location = new System.Drawing.Point(230, 80),
+                Width = 75
+            };
+
+            var cancelButton = new Button
+            {
+                Text = "Cancel",
+                DialogResult = DialogResult.Cancel,
+                Location = new System.Drawing.Point(315, 80),
+                Width = 75
+            };
+
+            dialog.Controls.Add(label);
+            dialog.Controls.Add(textBox);
+            dialog.Controls.Add(okButton);
+            dialog.Controls.Add(cancelButton);
+            dialog.AcceptButton = okButton;
+            dialog.CancelButton = cancelButton;
+
+            if (dialog.ShowDialog(_form) == DialogResult.OK && !string.IsNullOrWhiteSpace(textBox.Text))
+            {
+                string input = textBox.Text.Trim();
+                if (ulong.TryParse(input.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? input[2..] : input, 
+                    System.Globalization.NumberStyles.HexNumber, null, out ulong address))
+                {
+                    // Jump disassembly to address
+                    var disasm = _form.Controls.Find("DisassemblyControl", true).FirstOrDefault() as DisassemblyControl;
+                    if (disasm != null)
+                    {
+                        disasm.JumpToAddress(address);
+                    }
+
+                    // Also sync hex editor
+                    int offset = (int)_core.AddressToOffset(address);
+                    if (offset >= 0)
+                    {
+                        _suppressEvents = true;
+                        _hex.SetSelection(offset, offset);
+                        _hex.ScrollTo(offset);
+                        _suppressEvents = false;
+                    }
+
+                    _log.Append($"Jumped to 0x{address:X}");
+                }
+                else
+                {
+                    MessageBox.Show("Invalid address format. Use hex (e.g., 0x140001000 or 140001000)", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+
+            dialog.Dispose();
         }
         
         // ---------------------------------------------------------
@@ -304,10 +399,38 @@ namespace ReverseEngineering.WinForms.MainWindow
             // Clear LLM context for new binary
             _llmPane?.Clear();
 
-            _core.LoadFile(ofd.FileName);
+            // Show progress dialog while loading
+            using var progressDialog = new DisassemblyProgressDialog();
+            _core.OnDisassemblyProgress = (processed, total) => progressDialog.UpdateProgress(processed, total);
+
+            try
+            {
+                // Load in background to keep UI responsive
+                var task = Task.Run(() => 
+                {
+                    try
+                    {
+                        _core.LoadFile(ofd.FileName);
+                    }
+                    finally
+                    {
+                        // Close dialog when load completes (success or error)
+                        progressDialog.Invoke(() => progressDialog.Close());
+                    }
+                });
+
+                // Show dialog modally - will close when task completes
+                progressDialog.ShowDialog();
+                task.Wait();  // Ensure task is complete
+            }
+            finally
+            {
+                _core.OnDisassemblyProgress = null;
+            }
 
             _suppressEvents = true;
             _hex.SetBuffer(_core.HexBuffer);
+            _hex.SetImageBase(_core.ImageBase);
             _disasmController.Load(_core);
             _suppressEvents = false;
 
@@ -357,6 +480,7 @@ namespace ReverseEngineering.WinForms.MainWindow
             // Load binary
             _core.LoadFile(filePath);
             _hex.SetBuffer(_core.HexBuffer);
+            _hex.SetImageBase(_core.ImageBase);
 
             // Apply patches
             ProjectManager.ApplyPatches(_core.HexBuffer, patches);

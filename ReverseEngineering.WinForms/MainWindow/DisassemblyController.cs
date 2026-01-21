@@ -95,6 +95,7 @@ private async void OnLineEdited(int index, string text)
         _view.Is64Bit = _core.Is64Bit;
         _view.SetInstructions(_instructions);
         _hex.SetBuffer(_core.HexBuffer);
+        _hex.SetImageBase(_core.ImageBase);
         _suppressEvents = false;
     }
     catch (TaskCanceledException)

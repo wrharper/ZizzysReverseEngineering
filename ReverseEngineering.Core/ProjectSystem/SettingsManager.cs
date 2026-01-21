@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Text.Json;
 
 namespace ReverseEngineering.Core.ProjectSystem
@@ -14,9 +15,7 @@ namespace ReverseEngineering.Core.ProjectSystem
         public int Port { get; set; } = 1234;
         public string? ModelName { get; set; } = "neural-chat";
         public double Temperature { get; set; } = 0.7;
-        public int MaxTokens { get; set; } = 4096;
         public bool EnableStreaming { get; set; } = true;
-        public int RequestTimeoutSeconds { get; set; } = 300;
         public bool EnableLLMAnalysis { get; set; } = true;
     }
 
@@ -76,13 +75,19 @@ namespace ReverseEngineering.Core.ProjectSystem
     /// </summary>
     public static class SettingsManager
     {
-        private static readonly string SettingsPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "ZizzysReverseEngineering",
-            "settings.json"
-        );
+        private static readonly string SettingsPath = GetSettingsPath();
 
         private static AppSettings _currentSettings = new();
+
+        private static string GetSettingsPath()
+        {
+            // Get exe directory first
+            string? exeDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            if (string.IsNullOrEmpty(exeDir))
+                exeDir = AppDomain.CurrentDomain.BaseDirectory;
+
+            return Path.Combine(exeDir, "settings.json");
+        }
 
         static SettingsManager()
         {
@@ -177,21 +182,9 @@ namespace ReverseEngineering.Core.ProjectSystem
             SaveSettings();
         }
 
-        public static void SetLMStudioMaxTokens(int tokens)
-        {
-            _currentSettings.LMStudio.MaxTokens = Math.Max(1, tokens);
-            SaveSettings();
-        }
-
         public static void SetLMStudioStreaming(bool enabled)
         {
             _currentSettings.LMStudio.EnableStreaming = enabled;
-            SaveSettings();
-        }
-
-        public static void SetLMStudioTimeout(int seconds)
-        {
-            _currentSettings.LMStudio.RequestTimeoutSeconds = Math.Max(10, seconds);
             SaveSettings();
         }
 
@@ -330,12 +323,6 @@ namespace ReverseEngineering.Core.ProjectSystem
 
             if (_currentSettings.LMStudio.Temperature < 0.0 || _currentSettings.LMStudio.Temperature > 1.0)
                 errors.Add("Temperature must be between 0.0 and 1.0");
-
-            if (_currentSettings.LMStudio.MaxTokens < 1)
-                errors.Add("Max tokens must be at least 1");
-
-            if (_currentSettings.LMStudio.RequestTimeoutSeconds < 10)
-                errors.Add("Request timeout must be at least 10 seconds");
 
             if (_currentSettings.UI.FontSize < 8 || _currentSettings.UI.FontSize > 24)
                 errors.Add("Font size must be between 8 and 24");

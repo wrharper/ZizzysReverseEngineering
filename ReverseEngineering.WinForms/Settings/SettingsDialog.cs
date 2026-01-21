@@ -22,8 +22,6 @@ namespace ReverseEngineering.WinForms.Settings
         private TextBox _lmModelTextBox = null!;
         private TrackBar _lmTempTrackBar = null!;
         private Label _lmTempLabel = null!;
-        private NumericUpDown _lmMaxTokensNumeric = null!;
-        private NumericUpDown _lmTimeoutNumeric = null!;
         private CheckBox _lmStreamingCheckBox = null!;
         private CheckBox _lmEnabledCheckBox = null!;
         private Button _testConnectionButton = null!;
@@ -208,35 +206,6 @@ namespace ReverseEngineering.WinForms.Settings
             _lmTempLabel = new Label { Text = $"Temperature: {_settings.LMStudio.Temperature:F2}", Location = new Point(460, y + 2), AutoSize = true, ForeColor = ThemeManager.CurrentTheme.ForeColor };
             panel.Controls.Add(_lmTempLabel);
             y += 30;
-
-            // Max Tokens
-            AddLabel(panel, "Max Tokens:", 10, y);
-            _lmMaxTokensNumeric = new NumericUpDown 
-            { 
-                Minimum = 1,
-                Maximum = 32768,
-                Value = Math.Min(_settings.LMStudio.MaxTokens, 32768),
-                Width = 100, 
-                Location = new Point(150, y), 
-                BackColor = ThemeManager.CurrentTheme.PanelColor, 
-                ForeColor = ThemeManager.CurrentTheme.ForeColor 
-            };
-            panel.Controls.Add(_lmMaxTokensNumeric);
-            y += 30;
-
-            // Timeout
-            AddLabel(panel, "Request Timeout (seconds):", 10, y);
-            _lmTimeoutNumeric = new NumericUpDown 
-            { 
-                Minimum = 10,
-                Maximum = 1800,
-                Value = Math.Clamp(_settings.LMStudio.RequestTimeoutSeconds, 10, 1800),
-                Width = 100, 
-                Location = new Point(150, y), 
-                BackColor = ThemeManager.CurrentTheme.PanelColor, 
-                ForeColor = ThemeManager.CurrentTheme.ForeColor 
-            };
-            panel.Controls.Add(_lmTimeoutNumeric);
             y += 30;
 
             // Streaming
@@ -444,8 +413,6 @@ namespace ReverseEngineering.WinForms.Settings
             _lmPortNumeric.Value = _settings.LMStudio.Port;
             _lmModelTextBox.Text = _settings.LMStudio.ModelName ?? "";
             _lmTempTrackBar.Value = (int)(_settings.LMStudio.Temperature * 100);
-            _lmMaxTokensNumeric.Value = _settings.LMStudio.MaxTokens;
-            _lmTimeoutNumeric.Value = _settings.LMStudio.RequestTimeoutSeconds;
             _lmStreamingCheckBox.Checked = _settings.LMStudio.EnableStreaming;
         }
 
@@ -456,8 +423,6 @@ namespace ReverseEngineering.WinForms.Settings
             SettingsManager.SetLMStudioPort((int)_lmPortNumeric.Value);
             SettingsManager.SetLMStudioModel(_lmModelTextBox.Text);
             SettingsManager.SetLMStudioTemperature(_lmTempTrackBar.Value / 100.0);
-            SettingsManager.SetLMStudioMaxTokens((int)_lmMaxTokensNumeric.Value);
-            SettingsManager.SetLMStudioTimeout((int)_lmTimeoutNumeric.Value);
             SettingsManager.SetLMStudioStreaming(_lmStreamingCheckBox.Checked);
 
             SettingsManager.SetAutoAnalyzeOnLoad(_autoAnalyzeLoadCheckBox.Checked);

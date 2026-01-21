@@ -49,7 +49,9 @@ namespace ReverseEngineering.WinForms.HexEditor
 
         private void DrawOffset(Graphics g, int offset, int y)
         {
-            string text = offset.ToString("X8");
+            // Convert file offset to virtual address using ImageBase
+            ulong virtualAddress = _s.ImageBase + (ulong)offset;
+            string text = virtualAddress.ToString("X16");
             g.DrawString(text, _owner.Font, HexEditorTheme.OffsetBrush,
                 new PointF(0, y));
         }

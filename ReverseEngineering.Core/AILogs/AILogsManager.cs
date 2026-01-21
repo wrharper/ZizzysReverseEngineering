@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -75,13 +76,18 @@ namespace ReverseEngineering.Core.AILogs
 
         public AILogsManager(string? customLogsPath = null)
         {
-            _logsRootPath = customLogsPath ?? Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "ZizzysReverseEngineering",
-                "AILogs"
-            );
-
+            _logsRootPath = customLogsPath ?? GetDefaultLogsPath();
             Directory.CreateDirectory(_logsRootPath);
+        }
+
+        private static string GetDefaultLogsPath()
+        {
+            // Get exe directory first
+            string? exeDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            if (string.IsNullOrEmpty(exeDir))
+                exeDir = AppDomain.CurrentDomain.BaseDirectory;
+
+            return Path.Combine(exeDir, "AILogs");
         }
 
         // ---------------------------------------------------------

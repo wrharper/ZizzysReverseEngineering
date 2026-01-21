@@ -1,8 +1,14 @@
 # ZizzysReverseEngineering - Complete Binary Analysis Suite with AI
 
-**Status**: ✅ **PRODUCTION READY** | Phase 4 (LM Studio) Complete | 0 Compilation Errors
+**Status**: ✅ **PRODUCTION READY** | Phase 6+ Complete | 0 Errors | Multi-Section + Streaming + Address Sync
 
 A professional-grade binary reverse engineering tool with **local AI-powered analysis** via LM Studio, built with .NET 10 and C#.
+
+**Latest Updates (January 21, 2026)**:
+- ✨ Multi-section disassembly (all executable sections)
+- ✨ Virtual address synchronization (hex ↔ disassembler)
+- ✨ LLM streaming infrastructure (real-time responses)
+- ✨ Section-based code organization
 
 ---
 
@@ -10,7 +16,8 @@ A professional-grade binary reverse engineering tool with **local AI-powered ana
 
 ### 1. Start LM Studio (Optional, for AI)
 ```bash
-lm-studio --listen 127.0.0.1:1234 --load openai/gpt-oss-120b
+lm-studio --listen 127.0.0.1:1234
+# Load any OpenAI-compatible model
 ```
 
 ### 2. Build & Run
@@ -20,34 +27,57 @@ dotnet run --project ReverseEngineering.WinForms
 ```
 
 ### 3. Use It
-- **File → Open Binary** → Load executable
-- **Ctrl+Shift+A** → Run analysis
-- **Click instruction** → Analysis → Explain with AI
-- **Ctrl+F** → Search
+- **File → Open Binary** → Load PE executable (.exe, .dll, .sys)
+- **Ctrl+Shift+A** → Run analysis (CFG, functions, xrefs)
+- **View → Theme** → Dark/Light (4 themes available)
+- **LLM Tab** → Chat with AI about binary (requires LM Studio)
+- **Ctrl+F** → Search code/strings
+- **Hex Editor** → Edit bytes with virtual addresses
+- **Right-click** → Annotate functions/data
 
 ---
 
-## ✨ Features
+## ✨ Features (January 21, 2026)
 
 ### Binary Analysis
-✅ PE loader (x86/x64) | ✅ Disassembly (Iced.Intel) | ✅ CFG | ✅ Function discovery | ✅ Xref tracking | ✅ Symbol resolution | ✅ Import extraction | ✅ String scanning
+- ✅ **PE Loader**: x86/x64 both supported
+- ✅ **Multi-Section**: All executable sections (.text, .code, etc.) disassembled
+- ✅ **CFG Building**: Control flow graphs with basic block analysis
+- ✅ **Function Discovery**: Automatic and manual function identification
+- ✅ **Xref Tracking**: Code→Code, Code→Data cross-reference analysis
+- ✅ **Symbol Resolution**: Imports, exports, discovered functions
+- ✅ **String Scanning**: ASCII and Unicode string extraction
+- ✅ **Pattern Detection**: Byte and instruction pattern matching
 
-### AI Analysis (LM Studio)
-✅ Instruction explanation | ✅ Pseudocode generation | ✅ Function signatures | ✅ Pattern detection | ✅ Variable naming | ✅ Control flow analysis
+### AI Analysis (LM Studio Integration)
+- ✅ **Binary Context**: Full binary summary in each query
+- ✅ **Multi-Section Context**: Includes analysis from ALL sections
+- ✅ **Session Management**: Conversation history across queries
+- ✅ **Streaming Responses**: Real-time chunk delivery (when enabled)
+- ✅ **AILogs Tracking**: Full query/response history with timestamps
+- ✅ **Custom Prompts**: Domain-specific analysis templates
+- ✅ **Full History**: Access to all previous queries
 
 ### Interactive UI
-✅ Hex editor | ✅ Disassembly sync | ✅ Symbol tree | ✅ CFG visualization | ✅ Multi-tab search | ✅ Dark/light theme | ✅ Full undo/redo
+- ✅ **Hex Editor**: Virtual address display, inline patching, row selection
+- ✅ **Disassembly View**: Syntax highlighting, section headers, navigation
+- ✅ **Address Sync**: Click instruction → hex editor scrolls to same virtual address
+- ✅ **Symbol Tree**: Function browser with CFG integration
+- ✅ **CFG Visualization**: Interactive control flow graphs
+- ✅ **Strings Tab**: Sortable, searchable string list
+- ✅ **PE Info**: Binary metadata display
+- ✅ **Themes**: 4 themes (Dark, Light, Midnight, HackerGreen)
+- ✅ **Full Undo/Redo**: Hex edits with history (100 commands)
 
 ### Project Management
-✅ Save/load projects | ✅ Patch export | ✅ Annotations | ✅ Settings persistence | ✅ Full logging
+- ✅ **Save/Load**: Projects store binary + patches + state
+- ✅ **Patch Export**: Generate binary with all edits applied
+- ✅ **Annotations**: Name functions, add comments
+- ✅ **View State**: Persist scroll position, selections
+- ✅ **Settings**: Theme, font, auto-analyze, logging level
+- ✅ **Logging**: File + in-memory logs with categories
+- ✅ **Backup**: Auto-backup on save
 
----
-
-## 📖 Documentation
-
-### Start Here (5 min read)
-- **[FINAL_SUMMARY.md](FINAL_SUMMARY.md)** - Complete overview
-- **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - APIs & hotkeys
 
 ### Detailed Guides
 - **[PHASE4_LM_STUDIO_INTEGRATION.md](PHASE4_LM_STUDIO_INTEGRATION.md)** - AI features

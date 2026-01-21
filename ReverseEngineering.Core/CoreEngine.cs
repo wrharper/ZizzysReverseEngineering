@@ -38,15 +38,27 @@ namespace ReverseEngineering.Core
         public List<PatternMatch> Strings { get; private set; } = [];
         public bool AnalysisInProgress { get; private set; }
 
-        // ---------------------------------------------------------
-        //  LOAD FILE
-        // ---------------------------------------------------------
+        /// <summary>
+        /// Progress callback for disassembly: (processed, total)
+        /// </summary>
+        public delegate void DisassemblyProgressCallback(int processed, int total);
+
+        public DisassemblyProgressCallback? OnDisassemblyProgress { get; set; }
+
         public void LoadFile(string path)
         {
             if (!File.Exists(path))
                 throw new FileNotFoundException("Binary not found", path);
 
+            // Report initial progress (file read)
+            OnDisassemblyProgress?.Invoke(0, 100);
+            System.Threading.Thread.Sleep(50);  // Ensure UI updates
+
             var bytes = File.ReadAllBytes(path);
+
+            // Report after file read (10%)
+            OnDisassemblyProgress?.Invoke(10, 100);
+            System.Threading.Thread.Sleep(50);
 
             // Detect PE32 vs PE32+
             Is64Bit = DetectBitness(bytes);
@@ -54,17 +66,38 @@ namespace ReverseEngineering.Core
             // Extract PE header info
             PEInfo = PEHeaderExtractor.Extract(bytes);
 
+            // Report after header parsing (20%)
+            OnDisassemblyProgress?.Invoke(20, 100);
+            System.Threading.Thread.Sleep(50);
+
             // Create buffer
             HexBuffer = new HexBuffer(bytes, path);
 
             // Patch engine for future undo/redo
             _patchEngine = new PatchEngine(HexBuffer);
 
-            // Decode full disassembly
-            Disassembly = Disassembler.DecodePE(bytes);
+            // Report before disassembly (30%)
+            OnDisassemblyProgress?.Invoke(30, 100);
+            System.Threading.Thread.Sleep(50);
+
+            // Decode full disassembly (will report 30-95% during this phase)
+            // DecodePE now reports progress as (percentage, 100)
+            Disassembly = Disassembler.DecodePE(bytes, (progressPercent, _) => 
+            {
+                // Scale from 0-100% to 30-95% range
+                int scaledProgress = 30 + (progressPercent * 65 / 100);
+                OnDisassemblyProgress?.Invoke(scaledProgress, 100);
+            });
+
+            // Report before address indexing (95%)
+            OnDisassemblyProgress?.Invoke(95, 100);
+            System.Threading.Thread.Sleep(50);
 
             // Build address map
             RebuildAddressIndex();
+
+            // Report completion (100%)
+            OnDisassemblyProgress?.Invoke(100, 100);
         }
 
         // ---------------------------------------------------------

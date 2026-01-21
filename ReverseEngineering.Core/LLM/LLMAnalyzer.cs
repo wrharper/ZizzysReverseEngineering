@@ -22,8 +22,7 @@ namespace ReverseEngineering.Core.LLM
         private LLMSession? _currentSession;
 
         private const string RE_SYSTEM_PROMPT = "You are an expert in reverse engineering x86/x64 assembly code. " +
-            "Provide concise, technical analysis focusing on function behavior, data flow, and control flow. " +
-            "Keep responses brief (1-3 sentences).";
+            "Provide concise, technical analysis focusing on function behavior, data flow, and control flow. ";
 
         public LLMAnalyzer(LocalLLMClient client, CoreEngine? engine = null)
         {
@@ -70,6 +69,19 @@ namespace ReverseEngineering.Core.LLM
         {
             var session = GetOrCreateSession();
             return await session.QueryAsync(query, cancellationToken);
+        }
+
+        /// <summary>
+        /// Send query through current session with streaming response
+        /// Chunks are delivered in real-time via callback
+        /// </summary>
+        public async Task QueryWithContextStreamAsync(
+            string query,
+            Action<string> onChunkReceived,
+            CancellationToken cancellationToken = default)
+        {
+            var session = GetOrCreateSession();
+            await session.QueryStreamAsync(query, onChunkReceived, cancellationToken);
         }
 
         // ---------------------------------------------------------

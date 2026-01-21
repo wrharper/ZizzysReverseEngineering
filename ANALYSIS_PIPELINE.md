@@ -1,5 +1,8 @@
 # Analysis Data Pipeline - LLM Context System
 
+**Updated**: January 21, 2026  
+**Status**: Multi-section support complete
+
 ## Overview
 
 The analysis data pipeline transforms the CoreEngine's binary analysis results into a comprehensive system prompt that provides an AI assistant with full context of the binary being analyzed.
@@ -17,21 +20,27 @@ The `CoreEngine` runs independent analysis on the loaded binary:
 ```
 LoadFile(binary.exe)
   ↓
-Disassembler.DecodePE()  →  List<Instruction> with metadata
+Disassembler.DecodePE()  →  All executable sections processed
+  ├── .text section disassembly
+  ├── .code section disassembly
+  ├── (+ other executable sections)
+  └─→ List<Instruction> with metadata + SectionName
   ↓
 RunAnalysis()  →  {
-  - BasicBlockBuilder     → ControlFlowGraph (CFG)
-  - FunctionFinder        → List<Function>
+  - BasicBlockBuilder     → ControlFlowGraph (CFG) for each section
+  - FunctionFinder        → List<Function> across all sections
   - CrossReferenceEngine  → Dictionary<address, List<XRef>>
   - SymbolResolver        → Dictionary<address, Symbol>
+  - Combines results from ALL sections
 }
 ```
 
-**Available Analysis Data**:
-- `Disassembly`: Complete instruction list with mnemonics, operands, addresses
-- `Functions`: Discovered functions with CFG, entry point, size, import/export flags
-- `CFG`: Control flow graph with basic blocks and edges
-- `CrossReferences`: Code→Code (calls, jumps), Code→Data (loads)
+**Available Analysis Data** (Multi-Section):
+- `Disassembly`: Complete instruction list from ALL executable sections
+  - Each Instruction now has `SectionName` property (.text, .code, etc.)
+- `Functions`: Discovered functions across all sections with CFG
+- `CFG`: Control flow graphs for each function
+- `CrossReferences`: Code→Code and Code→Data xrefs across section boundaries
 - `Symbols`: Imported/exported functions, data symbols
 - `HexBuffer`: Current binary state + modified bytes tracking
 
@@ -39,7 +48,7 @@ RunAnalysis()  →  {
 
 ### 2. BinaryContextGenerator - Data Extraction
 
-`BinaryContextGenerator.GenerateContext()` extracts all available analysis data and produces a structured `BinaryContextData` object:
+`BinaryContextGenerator.GenerateContext()` extracts all available analysis data from ALL sections and produces a structured `BinaryContextData` object:
 
 #### A. Binary Metadata
 ```csharp
@@ -50,14 +59,16 @@ Is64Bit                 // Architecture
 ImageBase               // Base address
 EntryPoint              // Program entry point
 TotalBytes              // Binary size
+ExecutableSections      // Count of executable sections (NEW - Jan 21)
 ModifiedBytes           // Count of edited bytes
 RecentPatches           // Last 20 patch tuples (offset, original, new)
 ```
 
-#### B. Function Analysis
+#### B. Function Analysis (Multi-Section)
 ```csharp
 ExtractFunctionAnalysis()
-  ├─ TotalFunctions        // Count of discovered functions
+  ├─ TotalFunctions        // Count of discovered functions across ALL sections
+
   ├─ Functions (top 50)    // Detailed summaries for most-complex functions
   │   ├─ Address
   │   ├─ Name

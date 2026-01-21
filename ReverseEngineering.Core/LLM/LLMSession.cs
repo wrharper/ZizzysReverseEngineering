@@ -115,6 +115,72 @@ namespace ReverseEngineering.Core.LLM
         }
 
         /// <summary>
+        /// Send user query and stream AI response via callback
+        /// Chunks are delivered in real-time as they arrive
+        /// </summary>
+        public async Task QueryStreamAsync(
+            string userQuery,
+            Action<string> onChunkReceived,
+            CancellationToken cancellationToken = default)
+        {
+            if (!HasContext)
+                UpdateContext();
+
+            if (_currentContext == null)
+            {
+                onChunkReceived?.Invoke("Error: No binary context available");
+                return;
+            }
+
+            // Add user message to history
+            _history.Add(new ChatMessage
+            {
+                Role = "user",
+                Content = userQuery,
+                Timestamp = DateTime.UtcNow
+            });
+
+            // Generate system prompt from current context
+            var systemPrompt = _contextGenerator.GenerateSystemPrompt(_currentContext);
+
+            try
+            {
+                var fullResponse = new System.Text.StringBuilder();
+
+                // Stream response chunks
+                await _client.StreamChatAsync(
+                    userQuery,
+                    systemPrompt,
+                    chunk =>
+                    {
+                        onChunkReceived?.Invoke(chunk);
+                        fullResponse.Append(chunk);
+                    },
+                    cancellationToken);
+
+                // Add complete response to history
+                _history.Add(new ChatMessage
+                {
+                    Role = "assistant",
+                    Content = fullResponse.ToString(),
+                    Timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                var errorMsg = $"Error querying LLM: {ex.Message}";
+                onChunkReceived?.Invoke("\n[ERROR] " + errorMsg);
+                
+                _history.Add(new ChatMessage
+                {
+                    Role = "system",
+                    Content = errorMsg,
+                    Timestamp = DateTime.UtcNow
+                });
+            }
+        }
+
+        /// <summary>
         /// Get conversation history
         /// </summary>
         public IReadOnlyList<ChatMessage> GetHistory()

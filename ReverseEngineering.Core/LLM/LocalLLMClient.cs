@@ -1,3 +1,4 @@
+using ReverseEngineering.Core.ProjectSystem;
 using System;
 using System.Net.Http;
 using System.Text;
@@ -18,11 +19,10 @@ namespace ReverseEngineering.Core.LLM
         private readonly int _timeoutSeconds;
 
         public string Model { get; set; } = "local-model"; // Set by user/config
-        public int MaxTokens { get; set; } = 512;
         public float Temperature { get; set; } = 0.7f;
         public float TopP { get; set; } = 0.9f;
 
-        public LocalLLMClient(string baseUrl = "http://127.0.0.1:1234", int timeoutSeconds = 300)
+        public LocalLLMClient(string baseUrl = "http://127.0.0.1:1234", int timeoutSeconds = 30000)
         {
             _baseUrl = baseUrl.TrimEnd('/');
             _timeoutSeconds = timeoutSeconds;
@@ -86,7 +86,7 @@ namespace ReverseEngineering.Core.LLM
                 {
                     model = Model,
                     prompt = prompt,
-                    max_tokens = MaxTokens,
+                    max_tokens = int.MaxValue,
                     temperature = Temperature,
                     top_p = TopP,
                     stream = false
@@ -148,7 +148,7 @@ namespace ReverseEngineering.Core.LLM
                 {
                     model = Model,
                     messages = messages,
-                    max_tokens = MaxTokens,
+                    max_tokens = int.MaxValue,
                     temperature = Temperature,
                     top_p = TopP,
                     stream = false
@@ -194,6 +194,119 @@ namespace ReverseEngineering.Core.LLM
         }
 
         /// <summary>
+        /// Stream chat response with callbacks for each chunk
+        /// </summary>
+        public async Task StreamChatAsync(string message, string systemPrompt, Action<string> onChunkReceived, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                // Log prompt sizes to verify system prompt is being sent
+                Logger.Info("LLM", $"StreamChatAsync - User message: {message.Length} chars, System prompt: {systemPrompt?.Length ?? 0} chars");
+                
+                // Log first 300 chars of system prompt to see what's being sent
+                if (!string.IsNullOrEmpty(systemPrompt))
+                {
+                    var preview = systemPrompt.Length > 300 ? systemPrompt.Substring(0, 300) + "..." : systemPrompt;
+                    Logger.Info("LLM", $"System prompt preview: {preview.Replace("\n", " | ")}");
+                }
+
+                var messages = new System.Collections.Generic.List<object>();
+                
+                if (!string.IsNullOrEmpty(systemPrompt))
+                {
+                    messages.Add(new { role = "system", content = systemPrompt });
+                }
+                
+                messages.Add(new { role = "user", content = message });
+
+                var requestBody = new
+                {
+                    model = Model,
+                    messages = messages,
+                    max_tokens = int.MaxValue,
+                    temperature = Temperature,
+                    top_p = TopP,
+                    stream = true  // Always stream for this method
+                };
+
+                var json = JsonSerializer.Serialize(requestBody);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                Logger.Info("LLM", $"StreamChatAsync - JSON request body: {json.Length} bytes");
+
+                var response = await _httpClient.PostAsync(
+                    $"{_baseUrl}/v1/chat/completions",
+                    content,
+                    cancellationToken
+                );
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    Logger.Info("LLM", $"HTTP Error: {response.StatusCode}");
+                    onChunkReceived?.Invoke($"Error: HTTP {response.StatusCode}");
+                    return;
+                }
+
+                Logger.Info("LLM", "HTTP response received, starting to read streaming response...");
+
+                // Read streaming response line by line
+                using (var stream = await response.Content.ReadAsStreamAsync())
+                using (var reader = new System.IO.StreamReader(stream))
+                {
+                    Logger.Info("LLM", "Stream opened, reading lines...");
+                    string? line;
+                    int lineCount = 0;
+                    while ((line = await reader.ReadLineAsync()) != null)
+                    {
+                        lineCount++;
+                        cancellationToken.ThrowIfCancellationRequested();
+                        
+                        // Skip empty lines and [DONE] marker
+                        if (string.IsNullOrWhiteSpace(line) || line == "data: [DONE]")
+                            continue;
+
+                        // Remove "data: " prefix
+                        if (line.StartsWith("data: "))
+                            line = line.Substring(6);
+
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(line);
+                            var choices = doc.RootElement.GetProperty("choices");
+                            
+                            if (choices.GetArrayLength() > 0)
+                            {
+                                var delta = choices[0].GetProperty("delta");
+                                if (delta.TryGetProperty("content", out var contentProp))
+                                {
+                                    var content_text = contentProp.GetString();
+                                    if (!string.IsNullOrEmpty(content_text))
+                                    {
+                                        Logger.Info("LLM", $"Chunk received ({content_text.Length} chars)");
+                                        onChunkReceived?.Invoke(content_text);
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Info("LLM", $"Error parsing line {lineCount}: {ex.Message}");
+                        }
+                    }
+                    Logger.Info("LLM", $"Stream ended. Total lines read: {lineCount}");
+                }
+            }
+            catch (TaskCanceledException)
+            {
+                onChunkReceived?.Invoke($"\n[Timeout after {_timeoutSeconds}s]");
+            }
+            catch (Exception ex)
+            {
+                onChunkReceived?.Invoke($"\n[Error: {ex.Message}]");
+            }
+        }
+
+        /// <summary>
         /// Get token count for text (using rough estimation)
         /// </summary>
         public int EstimateTokenCount(string text)
@@ -211,7 +324,6 @@ namespace ReverseEngineering.Core.LLM
             {
                 var settings = ProjectSystem.SettingsManager.Current;
                 Model = settings.LMStudio.ModelName ?? "neural-chat";
-                MaxTokens = settings.LMStudio.MaxTokens;
                 Temperature = (float)settings.LMStudio.Temperature;
                 TopP = 0.9f; // Not exposed in settings yet
             }

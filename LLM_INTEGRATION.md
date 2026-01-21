@@ -1,8 +1,11 @@
 # LLM Session Integration Guide
 
+**Updated**: January 21, 2026  
+**Status**: Streaming infrastructure complete + multi-section context
+
 ## Quick Start
 
-### 1. Basic Session Usage
+### 1. Basic Session Usage (Non-Streaming)
 
 ```csharp
 // In AnalysisController or any place with access to _engine
@@ -14,6 +17,25 @@ var session = analyzer.GetOrCreateSession(_engine);
 
 // Send query with full binary context
 string response = await session.QueryAsync("Analyze the entry point function");
+```
+
+### 1b. Streaming Session Usage (New - January 2026)
+
+```csharp
+// Use QueryStreamAsync with callback for real-time chunk delivery
+var llmClient = new LocalLLMClient("localhost", 1234);
+var analyzer = new LLMAnalyzer(llmClient);
+var session = analyzer.GetOrCreateSession(_engine);
+
+// Define callback to receive each chunk
+Action<string> onChunkReceived = (chunk) => {
+    MainWindow.BeginInvoke(() => {
+        _llmPane.AppendStreamedChunk(chunk);
+    });
+};
+
+// Start streaming
+await session.QueryStreamAsync("Analyze the entry point", onChunkReceived);
 ```
 
 ### 2. Session Persistence Across Operations
@@ -319,15 +341,141 @@ private async void SendButton_Click(object? sender, EventArgs e)
 
 ---
 
+## Streaming Infrastructure (January 21, 2026)
+
+### New Streaming Methods
+
+#### LocalLLMClient.StreamChatAsync
+```csharp
+/// <summary>
+/// Stream chat completion from LM Studio
+/// </summary>
+/// <param name="onChunkReceived">Callback invoked for each text chunk</param>
+public async Task StreamChatAsync(
+    string userMessage, 
+    string systemPrompt, 
+    Action<string> onChunkReceived,
+    CancellationToken ct = default)
+{
+    // Logging:
+    // - System prompt size: X chars
+    // - JSON request body: Y bytes
+    // - Stream chunks received: N
+    
+    // Returns stream of chunks via callback
+}
+```
+
+#### LLMSession.QueryStreamAsync
+```csharp
+/// <summary>
+/// Query with full binary context, streaming response
+/// </summary>
+public async Task QueryStreamAsync(
+    string userQuery, 
+    Action<string> onChunkReceived,
+    CancellationToken ct = default)
+{
+    // Updates context via UpdateContext()
+    // Calls LocalLLMClient.StreamChatAsync()
+    // Accumulates response in StringBuilder
+    // Adds complete response to conversation history
+}
+```
+
+#### LLMAnalyzer.QueryWithContextStreamAsync
+```csharp
+/// <summary>
+/// High-level streaming API with domain-specific prompts
+/// </summary>
+public async Task QueryWithContextStreamAsync(
+    string userQuery,
+    Action<string> onChunkReceived,
+    CancellationToken ct = default)
+{
+    // Calls session.QueryStreamAsync()
+}
+```
+
+### UI Display Methods (LLMPane)
+
+```csharp
+// Show header and prepare for streaming
+public void StartStreamingResponse()
+{
+    _richTextBox.AppendText("[AI]: ");
+    _isStreaming = true;
+}
+
+// Append a chunk of text (called repeatedly)
+public void AppendStreamedChunk(string chunk)
+{
+    _richTextBox.AppendText(chunk);
+    _richTextBox.ScrollToCaret();
+}
+
+// Cleanup after streaming ends
+public void FinishStreamingResponse()
+{
+    _richTextBox.AppendText("\n");
+    _isStreaming = false;
+}
+```
+
+### Logging Added (Jan 21)
+
+LocalLLMClient logs for each query:
+- `"User message: X chars, System prompt: Y chars"`
+- `"System prompt preview: [first 300 chars]"`
+- `"JSON request body: Z bytes"`
+- `"HTTP response received, starting to read streaming response..."`
+- `"Stream opened, reading lines..."`
+- `"Chunk received (X chars)"` for each chunk
+- `"Stream ended. Total lines read: N"`
+
+### Configuration
+
+Streaming can be disabled via settings:
+```csharp
+if (settings.EnableStreaming)
+    await QueryStreamAsync(query, onChunk, ct);
+else
+    await QueryAsync(query, ct);
+```
+
+---
+
+## Multi-Section Binary Context (Jan 21)
+
+The system now analyzes ALL executable sections, not just .text:
+
+```
+Binary: program.exe (x64, 1.23 MB)
+├── .text section: 0x140001000 - 0x140100000
+│   ├── 156 functions
+│   ├── 892 cross-references
+│   └── Entry point: 0x140001000
+├── .code section: 0x140200000 - 0x140250000
+│   ├── 18 functions
+│   ├── 45 cross-references
+│   └── Dynamically loaded code
+└── Additional sections...
+
+Context includes: All functions, CFG, xrefs, strings from ALL sections
+```
+
+---
+
 ## What the AI Sees
 
 When you ask "What does the main function do?", the AI receives:
 
 ```
 SYSTEM CONTEXT:
-- Binary: program.exe (PE x64, 1.23 MB)
+- Binary: program.exe (PE x64, 1.23 MB, multi-section)
 - Entry point: 0x140001000
 - Main function: 0x140002500 (2048 bytes, 12 basic blocks)
+```
 - Called by: entry point
 - Calls: [0x140003000, 0x140004500, 0x140005200, ...]
 - Xrefs: 12 references to this function

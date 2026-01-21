@@ -29,6 +29,11 @@ namespace ReverseEngineering.Core
         /// </summary>
         public int SectionIndex { get; set; }
 
+        /// <summary>
+        /// Name of the section this instruction belongs to (e.g., ".text", ".code").
+        /// </summary>
+        public string? SectionName { get; set; }
+
         // ---------------------------------------------------------
         //  DISASSEMBLY TEXT
         // ---------------------------------------------------------

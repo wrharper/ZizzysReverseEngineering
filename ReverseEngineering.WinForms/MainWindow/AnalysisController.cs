@@ -204,8 +204,9 @@ namespace ReverseEngineering.WinForms.MainWindow
         //  LLM CHAT (Interactive RE Analysis - Master Level Tool)
         // ---------------------------------------------------------
         /// <summary>
-        /// Send a user query to the LLM with full binary context.
+        /// Send a user query to the LLM with full binary context and stream response.
         /// The LLM can read the binary and make patches upon request.
+        /// Response is displayed in real-time as chunks arrive.
         /// </summary>
         public async Task QueryLLMAsync(string userQuery, CancellationToken cancellationToken = default)
         {
@@ -213,7 +214,7 @@ namespace ReverseEngineering.WinForms.MainWindow
                 return;
 
             var timer = Stopwatch.StartNew();
-            _llmPane.SetAnalyzing("Analyzing...");
+            _llmPane.SetAnalyzing("Waiting for response...");
 
             try
             {

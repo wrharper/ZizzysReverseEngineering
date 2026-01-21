@@ -20,6 +20,8 @@ namespace ReverseEngineering.WinForms
 
         private List<Instruction> _instructions = [];
         private int _selectedIndex = -1;
+        private int _displayStartIndex = 0;  // Start of current viewport
+        private const int VIEWPORT_SIZE = 1000;  // Instructions to show at once
 
         public int SelectedIndex => _selectedIndex;
 
@@ -193,6 +195,7 @@ namespace ReverseEngineering.WinForms
         public void SetInstructions(List<Instruction> instructions)
         {
             _instructions = instructions ?? [];
+            _displayStartIndex = 0;
 
             if (_instructions.Count == 0)
             {
@@ -200,13 +203,47 @@ namespace ReverseEngineering.WinForms
                 return;
             }
 
+            RefreshViewport();
+        }
+
+        /// <summary>
+        /// Rebuild display for current viewport around _displayStartIndex
+        /// </summary>
+        private void RefreshViewport()
+        {
+            if (_instructions.Count == 0)
+                return;
+
+            int displayCount = Math.Min(VIEWPORT_SIZE, _instructions.Count - _displayStartIndex);
+            if (displayCount <= 0)
+            {
+                _displayStartIndex = Math.Max(0, _instructions.Count - VIEWPORT_SIZE);
+                displayCount = Math.Min(VIEWPORT_SIZE, _instructions.Count - _displayStartIndex);
+            }
+
             int width = Is64Bit ? 16 : 8;
             string fmt = "{0:X" + width + "}: {1} {2}\n";
 
-            var sb = new StringBuilder(_instructions.Count * 40);
+            var sb = new StringBuilder(displayCount * 40);
+            string? currentSection = null;
 
-            foreach (var ins in _instructions)
+            // Show context header
+            if (_displayStartIndex > 0)
+                sb.AppendLine($"[... {_displayStartIndex} instructions before ...]");
+
+            for (int i = _displayStartIndex; i < _displayStartIndex + displayCount; i++)
             {
+                var ins = _instructions[i];
+
+                if (ins.SectionName != currentSection)
+                {
+                    if (currentSection != null)
+                        sb.Append("\n");
+                    
+                    currentSection = ins.SectionName;
+                    sb.AppendFormat("═══ {0} SECTION ═══\n", currentSection?.ToUpper() ?? "UNKNOWN");
+                }
+
                 sb.AppendFormat(fmt,
                     ins.Address,
                     ins.Mnemonic,
@@ -214,11 +251,45 @@ namespace ReverseEngineering.WinForms
                 );
             }
 
+            // Show remaining count
+            if (_displayStartIndex + displayCount < _instructions.Count)
+                sb.AppendLine($"[... {_instructions.Count - (_displayStartIndex + displayCount)} instructions after ...]");
+
             Text = sb.ToString();
             SelectionStart = 0;
             SelectionLength = 0;
 
             HighlightSelectedLine(Get_selectedIndex());
+        }
+
+        /// <summary>
+        /// Jump to a specific instruction index
+        /// </summary>
+        public void JumpToInstruction(int instructionIndex)
+        {
+            if (instructionIndex < 0 || instructionIndex >= _instructions.Count)
+                return;
+
+            _displayStartIndex = Math.Max(0, instructionIndex - VIEWPORT_SIZE / 2);
+            RefreshViewport();
+
+            // Highlight the target instruction
+            HighlightSelectedLine(instructionIndex - _displayStartIndex);
+        }
+
+        /// <summary>
+        /// Jump to a specific address
+        /// </summary>
+        public void JumpToAddress(ulong address)
+        {
+            for (int i = 0; i < _instructions.Count; i++)
+            {
+                if (_instructions[i].Address == address)
+                {
+                    JumpToInstruction(i);
+                    return;
+                }
+            }
         }
 
         public void ScrollTo(int index)
@@ -239,11 +310,30 @@ namespace ReverseEngineering.WinForms
         public void SetInstructionsColored(List<Instruction> instructions)
         {
             _instructions = instructions ?? [];
+            _displayStartIndex = 0;
 
             if (_instructions.Count == 0)
             {
                 Text = string.Empty;
                 return;
+            }
+
+            RefreshViewportColored();
+        }
+
+        /// <summary>
+        /// Rebuild colored display for current viewport
+        /// </summary>
+        private void RefreshViewportColored()
+        {
+            if (_instructions.Count == 0)
+                return;
+
+            int displayCount = Math.Min(VIEWPORT_SIZE, _instructions.Count - _displayStartIndex);
+            if (displayCount <= 0)
+            {
+                _displayStartIndex = Math.Max(0, _instructions.Count - VIEWPORT_SIZE);
+                displayCount = Math.Min(VIEWPORT_SIZE, _instructions.Count - _displayStartIndex);
             }
 
             int width = Is64Bit ? 16 : 8;
@@ -252,12 +342,33 @@ namespace ReverseEngineering.WinForms
             SuspendLayout();
             Clear();
 
-            foreach (var ins in _instructions)
+            string? currentSection = null;
+
+            // Show context header
+            if (_displayStartIndex > 0)
             {
+                SelectionColor = Color.Gray;
+                AppendText($"[... {_displayStartIndex} instructions before ...]\n");
+            }
+
+            for (int i = _displayStartIndex; i < _displayStartIndex + displayCount; i++)
+            {
+                var ins = _instructions[i];
+
+                if (ins.SectionName != currentSection)
+                {
+                    if (currentSection != null)
+                        AppendText("\n");
+                    
+                    currentSection = ins.SectionName;
+                    SelectionColor = Color.Yellow;
+                    AppendText($"═══ {currentSection?.ToUpper() ?? "UNKNOWN"} SECTION ═══\n");
+                }
+
                 SelectionColor = Color.DarkGray;
                 AppendText(string.Format(addrFmt, ins.Address));
 
-                SelectionColor = Color.LightGreen;
+                SelectionColor = Color.LimeGreen;
                 AppendText(ins.Mnemonic);
 
                 SelectionColor = Color.White;
@@ -265,6 +376,13 @@ namespace ReverseEngineering.WinForms
                     AppendText(" " + ins.Operands);
 
                 AppendText("\n");
+            }
+
+            // Show remaining count
+            if (_displayStartIndex + displayCount < _instructions.Count)
+            {
+                SelectionColor = Color.Gray;
+                AppendText($"[... {_instructions.Count - (_displayStartIndex + displayCount)} instructions after ...]\n");
             }
 
             SelectionStart = 0;

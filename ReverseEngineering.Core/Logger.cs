@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Text;
 
 namespace ReverseEngineering.Core
@@ -25,12 +26,18 @@ namespace ReverseEngineering.Core
     public static class Logger
     {
         private static readonly List<LogEntry> _logHistory = [];
-        private static readonly string _logPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "ZizzysReverseEngineering",
-            "logs"
-        );
+        private static readonly string _logPath = GetLogPath();
         private static readonly object _lockObj = new();
+
+        private static string GetLogPath()
+        {
+            // Get exe directory first
+            string? exeDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            if (string.IsNullOrEmpty(exeDir))
+                exeDir = AppDomain.CurrentDomain.BaseDirectory;
+
+            return Path.Combine(exeDir, "logs");
+        }
 
         public static event Action<LogEntry>? LogAdded;
 
