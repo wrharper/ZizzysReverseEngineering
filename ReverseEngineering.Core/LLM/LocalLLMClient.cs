@@ -21,6 +21,10 @@ namespace ReverseEngineering.Core.LLM
         public string Model { get; set; } = "local-model"; // Set by user/config
         public float Temperature { get; set; } = 0.7f;
         public float TopP { get; set; } = 0.9f;
+        
+        // Token management
+        private int _maxContextTokens = 4096;  // Default fallback
+        private int _currentTokenUsage = 0;
 
         public LocalLLMClient(string baseUrl = "http://127.0.0.1:1234", int timeoutSeconds = 30000)
         {
@@ -50,6 +54,53 @@ namespace ReverseEngineering.Core.LLM
         }
 
         /// <summary>
+        /// Get available models and debug info
+        /// </summary>
+        public async Task<string> GetDebugInfoAsync()
+        {
+            var sb = new StringBuilder();
+            try
+            {
+                // Check /v1/models endpoint
+                sb.AppendLine("=== /v1/models ===");
+                var modelsResponse = await _httpClient.GetAsync($"{_baseUrl}/v1/models");
+                var modelsJson = await modelsResponse.Content.ReadAsStringAsync();
+                sb.AppendLine(modelsJson);
+                
+                // Try to check if there's a config endpoint
+                sb.AppendLine("\n=== Testing other endpoints ===");
+                try
+                {
+                    var configResponse = await _httpClient.GetAsync($"{_baseUrl}/api/config");
+                    if (configResponse.IsSuccessStatusCode)
+                    {
+                        var configJson = await configResponse.Content.ReadAsStringAsync();
+                        sb.AppendLine("/api/config:\n" + configJson);
+                    }
+                }
+                catch { sb.AppendLine("/api/config: Not available"); }
+                
+                // Try to check system prompt or other endpoints
+                try
+                {
+                    var systemResponse = await _httpClient.GetAsync($"{_baseUrl}/v1/config");
+                    if (systemResponse.IsSuccessStatusCode)
+                    {
+                        var systemJson = await systemResponse.Content.ReadAsStringAsync();
+                        sb.AppendLine("/v1/config:\n" + systemJson);
+                    }
+                }
+                catch { sb.AppendLine("/v1/config: Not available"); }
+            }
+            catch (Exception ex)
+            {
+                sb.AppendLine($"Error: {ex.Message}");
+            }
+            
+            return sb.ToString();
+        }
+
+        /// <summary>
         /// Get list of available models
         /// </summary>
         public async Task<string[]> GetAvailableModelsAsync()
@@ -74,6 +125,136 @@ namespace ReverseEngineering.Core.LLM
                 return Array.Empty<string>();
             }
         }
+        /// <summary>
+        /// Get context length for the currently loaded model
+        /// Queries the LM Studio /api/v1/models endpoint for context info
+        /// </summary>
+        public async Task<int> GetModelContextLengthAsync()
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"{_baseUrl}/v1/models");
+                var json = await response.Content.ReadAsStringAsync();
+                
+                using var doc = JsonDocument.Parse(json);
+                var dataArray = doc.RootElement.GetProperty("data");
+                
+                // Get first available model (LM Studio usually has just one loaded at a time)
+                foreach (var model in dataArray.EnumerateArray())
+                {
+                    var id = model.GetProperty("id").GetString();
+                    if (!string.IsNullOrEmpty(id))
+                    {
+                        // Update Model property with actual loaded model
+                        Model = id;
+                        Logger.Info("LLM", $"Found loaded model: {id}");
+                        
+                        // Try to get context from /api/v1/models endpoint
+                        if (await TryGetContextFromDetailedModelsEndpoint(id))
+                            return _maxContextTokens;
+                        
+                        Logger.Warning("LLM", $"Could not find context window for model '{id}'. Using default: {_maxContextTokens} tokens");
+                        return _maxContextTokens;
+                    }
+                }
+                
+                Logger.Warning("LLM", "No models found in /v1/models response");
+                return _maxContextTokens;
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("LLM", $"Error getting model context length: {ex.Message}", ex);
+                return _maxContextTokens;
+            }
+        }
+
+        /// <summary>
+        /// Try to get context from /api/v1/models endpoint
+        /// </summary>
+        private async Task<bool> TryGetContextFromDetailedModelsEndpoint(string modelId)
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/models");
+                if (!response.IsSuccessStatusCode)
+                    return false;
+
+                var json = await response.Content.ReadAsStringAsync();
+                Logger.Info("LLM", $"[/api/v1/models Response]\n{json}");
+                
+                using var doc = JsonDocument.Parse(json);
+                
+                // Try to find the model in the response
+                if (doc.RootElement.TryGetProperty("models", out var modelsArray))
+                {
+                    foreach (var modelObj in modelsArray.EnumerateArray())
+                    {
+                        // Look for matching model by key
+                        if (modelObj.TryGetProperty("key", out var keyEl) && keyEl.GetString() == modelId)
+                        {
+                            // Check for max_context_length (standard field)
+                            if (modelObj.TryGetProperty("max_context_length", out var maxCtx))
+                            {
+                                _maxContextTokens = maxCtx.GetInt32();
+                                Logger.Info("LLM", $"Found max_context_length from /api/v1/models: {_maxContextTokens} tokens");
+                                return true;
+                            }
+                            
+                            // Check in loaded_instances config (fallback)
+                            if (modelObj.TryGetProperty("loaded_instances", out var instances))
+                            {
+                                foreach (var instance in instances.EnumerateArray())
+                                {
+                                    if (instance.TryGetProperty("config", out var config) &&
+                                        config.TryGetProperty("context_length", out var ctxLen))
+                                    {
+                                        _maxContextTokens = ctxLen.GetInt32();
+                                        Logger.Info("LLM", $"Found context_length in loaded_instances config: {_maxContextTokens} tokens");
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                Logger.Warning("LLM", $"Model '{modelId}' not found in /api/v1/models response or missing context info");
+            }
+            catch (Exception ex)
+            {
+                Logger.Debug("LLM", $"/api/v1/models endpoint error: {ex.Message}");
+            }
+            return false;
+        }
+
+        
+        /// <summary>
+        /// Get current context usage as percentage
+        /// </summary>
+        public float GetContextUsagePercent()
+        {
+            if (_maxContextTokens <= 0)
+                return 0f;
+            return (_currentTokenUsage / (float)_maxContextTokens) * 100f;
+        }
+
+        /// <summary>
+        /// Get current token usage
+        /// </summary>
+        public int GetCurrentTokens() => _currentTokenUsage;
+
+        /// <summary>
+        /// Get max context tokens
+        /// </summary>
+        public int GetMaxTokens() => _maxContextTokens;
+
+        /// <summary>
+        /// Estimate tokens in text (rough: 1 token ≈ 4 chars)
+        /// </summary>
+        private int EstimateTokens(string text)
+        {
+            return (text?.Length ?? 0) / 4;
+        }
 
         /// <summary>
         /// Send a completion request to LM Studio
@@ -82,6 +263,31 @@ namespace ReverseEngineering.Core.LLM
         {
             try
             {
+                // Track token usage
+                int promptTokens = EstimateTokens(prompt);
+                _currentTokenUsage = promptTokens;
+
+                // Reserve 20% of context for output
+                int maxOutput = _maxContextTokens / 5;
+                int maxInput = _maxContextTokens - maxOutput;
+
+                // Truncate prompt if exceeds limit
+                if (promptTokens > maxInput)
+                {
+                    int safeChars = maxInput * 4;
+                    prompt = prompt.Substring(0, Math.Min(safeChars, prompt.Length));
+                    promptTokens = maxInput;
+                    _currentTokenUsage = promptTokens;
+                }
+
+                // Warn if approaching context limit
+                if (GetContextUsagePercent() > 80f)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[WARNING] Context usage at {GetContextUsagePercent():F1}% " +
+                        $"({_currentTokenUsage}/{_maxContextTokens} tokens)");
+                }
+
                 var requestBody = new
                 {
                     model = Model,

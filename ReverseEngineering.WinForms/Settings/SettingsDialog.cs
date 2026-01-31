@@ -19,10 +19,6 @@ namespace ReverseEngineering.WinForms.Settings
         // ---------------------------------------------------------
         private TextBox _lmHostTextBox = null!;
         private NumericUpDown _lmPortNumeric = null!;
-        private TextBox _lmModelTextBox = null!;
-        private TrackBar _lmTempTrackBar = null!;
-        private Label _lmTempLabel = null!;
-        private CheckBox _lmStreamingCheckBox = null!;
         private CheckBox _lmEnabledCheckBox = null!;
         private Button _testConnectionButton = null!;
 
@@ -168,8 +164,22 @@ namespace ReverseEngineering.WinForms.Settings
 
             int y = 10;
 
+            // Info label
+            var infoLabel = new Label 
+            { 
+                Text = "Model and generation settings are automatically loaded from the running LM Studio server.",
+                Location = new Point(10, y),
+                AutoSize = false,
+                Width = 550,
+                Height = 40,
+                ForeColor = ThemeManager.CurrentTheme.ForeColor
+            };
+            panel.Controls.Add(infoLabel);
+            y += 50;
+
             // Enabled checkbox
             _lmEnabledCheckBox = AddCheckBox(panel, "Enable LLM Analysis", 10, ref y);
+            y += 10;
 
             // Host
             AddLabel(panel, "Host:", 10, y);
@@ -191,28 +201,9 @@ namespace ReverseEngineering.WinForms.Settings
             };
             panel.Controls.Add(_lmPortNumeric);
             y += 30;
-
-            // Model
-            AddLabel(panel, "Model:", 10, y);
-            _lmModelTextBox = new TextBox { Text = _settings.LMStudio.ModelName ?? "", Width = 300, Location = new Point(150, y), BackColor = ThemeManager.CurrentTheme.PanelColor, ForeColor = ThemeManager.CurrentTheme.ForeColor };
-            panel.Controls.Add(_lmModelTextBox);
-            y += 30;
-
-            // Temperature
-            AddLabel(panel, "Temperature:", 10, y);
-            _lmTempTrackBar = new TrackBar { Minimum = 0, Maximum = 100, Value = (int)(_settings.LMStudio.Temperature * 100), Width = 300, Location = new Point(150, y) };
-            _lmTempTrackBar.ValueChanged += (s, e) => _lmTempLabel.Text = $"Temperature: {_lmTempTrackBar.Value / 100.0:F2}";
-            panel.Controls.Add(_lmTempTrackBar);
-            _lmTempLabel = new Label { Text = $"Temperature: {_settings.LMStudio.Temperature:F2}", Location = new Point(460, y + 2), AutoSize = true, ForeColor = ThemeManager.CurrentTheme.ForeColor };
-            panel.Controls.Add(_lmTempLabel);
-            y += 30;
-            y += 30;
-
-            // Streaming
-            _lmStreamingCheckBox = AddCheckBox(panel, "Enable Streaming", 150, ref y, _settings.LMStudio.EnableStreaming);
+            y += 10;
 
             // Test button
-            y += 10;
             _testConnectionButton = new Button
             {
                 Text = "Test Connection",
@@ -411,9 +402,6 @@ namespace ReverseEngineering.WinForms.Settings
             _lmEnabledCheckBox.Checked = _settings.LMStudio.EnableLLMAnalysis;
             _lmHostTextBox.Text = _settings.LMStudio.Host;
             _lmPortNumeric.Value = _settings.LMStudio.Port;
-            _lmModelTextBox.Text = _settings.LMStudio.ModelName ?? "";
-            _lmTempTrackBar.Value = (int)(_settings.LMStudio.Temperature * 100);
-            _lmStreamingCheckBox.Checked = _settings.LMStudio.EnableStreaming;
         }
 
         private void SaveSettings()
@@ -421,9 +409,6 @@ namespace ReverseEngineering.WinForms.Settings
             SettingsManager.SetLMAnalysisEnabled(_lmEnabledCheckBox.Checked);
             SettingsManager.SetLMStudioHost(_lmHostTextBox.Text);
             SettingsManager.SetLMStudioPort((int)_lmPortNumeric.Value);
-            SettingsManager.SetLMStudioModel(_lmModelTextBox.Text);
-            SettingsManager.SetLMStudioTemperature(_lmTempTrackBar.Value / 100.0);
-            SettingsManager.SetLMStudioStreaming(_lmStreamingCheckBox.Checked);
 
             SettingsManager.SetAutoAnalyzeOnLoad(_autoAnalyzeLoadCheckBox.Checked);
             SettingsManager.SetAutoAnalyzeOnPatch(_autoAnalyzePatchCheckBox.Checked);

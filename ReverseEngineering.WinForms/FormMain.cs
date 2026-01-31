@@ -15,6 +15,8 @@ namespace ReverseEngineering.WinForms
     {
         private readonly CoreEngine _core = new();
         private SplitContainer? _verticalSplit;
+        private AIStatsControl? _aiStatsControl;  // Reference to AI stats control for token updates
+        private System.Windows.Forms.Timer? _tokenUpdateTimer;  // Timer for periodic token stat updates
 
         private readonly MainMenuController _menuController;
         private readonly ThemeMenuController _themeController;
@@ -24,6 +26,9 @@ namespace ReverseEngineering.WinForms
         
         private PEInfoControl? peInfoControl;
         private StringsControl? stringsControl;
+        
+        // LLM Client (kept as field for initialization in Load)
+        private LocalLLMClient? _llmClient;
 
         public FormMain()
         {
@@ -45,14 +50,14 @@ namespace ReverseEngineering.WinForms
             // ---------------------------------------------------------
             //  LLM CLIENT (Optional, for LM Studio integration)
             // ---------------------------------------------------------
-            var llmClient = new LocalLLMClient();
+            _llmClient = new LocalLLMClient();
 
             // ---------------------------------------------------------
             //  CONTROLLERS (RichTextBox disassembly)
             // ---------------------------------------------------------
             _disasmController = new DisassemblyController(disasmView, hexEditor, _core);
 
-            _analysisController = new AnalysisController(_core, symbolTree, graphControl, llmClient, llmPane, null, stringsControl);
+            _analysisController = new AnalysisController(_core, symbolTree, graphControl, _llmClient, llmPane, null, stringsControl);
 
             _menuController = new MainMenuController(
                 this,
@@ -160,13 +165,20 @@ namespace ReverseEngineering.WinForms
             var rightPanel = new Panel { Dock = DockStyle.Fill };
             rightPanel.Controls.Add(rightTabs);
 
-            // BOTTOM PANEL: AI Chat
+            // BOTTOM PANEL: AI Chat & AI Stats
             var bottomTabs = new TabControl { Dock = DockStyle.Fill };
-            llmPane.Dock = DockStyle.Fill;
             
+            // AI Chat tab
+            llmPane.Dock = DockStyle.Fill;
             var chatPage = new TabPage("AI Chat");
             chatPage.Controls.Add(llmPane);
             bottomTabs.TabPages.Add(chatPage);
+
+            // AI Stats tab
+            _aiStatsControl = new AIStatsControl { Dock = DockStyle.Fill };
+            var statsPage = new TabPage("AI Stats");
+            statsPage.Controls.Add(_aiStatsControl);
+            bottomTabs.TabPages.Add(statsPage);
 
             var bottomPanel = new Panel { Dock = DockStyle.Fill };
             bottomPanel.Controls.Add(bottomTabs);
@@ -242,7 +254,7 @@ namespace ReverseEngineering.WinForms
             };
 
             // Set proper splitter distances on form load (50/50 left-right, 60% top content)
-            this.Load += (s, e) =>
+            this.Load += async (s, e) =>
             {
                 if (_verticalSplit != null && _verticalSplit.Height > 0)
                 {
@@ -252,6 +264,88 @@ namespace ReverseEngineering.WinForms
                 if (splitMain != null && splitMain.Width > 0)
                 {
                     splitMain.SplitterDistance = splitMain.Width / 2;
+                }
+
+                // Initialize LLM token context on app start
+                if (_llmClient != null)
+                {
+                    try
+                    {
+                        bool isHealthy = await _llmClient.IsHealthyAsync();
+                        if (isHealthy)
+                        {
+                            await _llmClient.GetModelContextLengthAsync();
+                            statusFile.Text = "✓ LM Studio connected";
+                            
+                            // Initialize AI Stats display with model data
+                            if (_aiStatsControl != null)
+                            {
+                                _aiStatsControl.UpdateAIStats(
+                                    _llmClient.Model,
+                                    0,  // Initial usage is 0%
+                                    0,  // Current tokens
+                                    _llmClient.GetMaxTokens()
+                                );
+                                
+                                // Start timer to periodically update token stats
+                                _tokenUpdateTimer = new System.Windows.Forms.Timer();
+                                _tokenUpdateTimer.Interval = 1000;  // Update every 1 second
+                                _tokenUpdateTimer.Tick += (sender, args) =>
+                                {
+                                    if (_aiStatsControl != null && _llmClient != null)
+                                    {
+                                        _aiStatsControl.UpdateAIStats(
+                                            _llmClient.Model,
+                                            _llmClient.GetContextUsagePercent(),
+                                            _llmClient.GetCurrentTokens(),
+                                            _llmClient.GetMaxTokens()
+                                        );
+                                    }
+                                };
+                                _tokenUpdateTimer.Start();
+                            }
+                        }
+                        else
+                        {
+                            statusFile.Text = "⚠ LM Studio not available";
+                            
+                            // Show disconnected state in AI Stats
+                            if (_aiStatsControl != null)
+                            {
+                                _aiStatsControl.UpdateAIStats(
+                                    "(not connected)",
+                                    0,
+                                    0,
+                                    4096
+                                );
+                            }
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        statusFile.Text = $"✗ LM Studio error";
+                        
+                        // Show error state in AI Stats
+                        if (_aiStatsControl != null)
+                        {
+                            _aiStatsControl.UpdateAIStats(
+                                "(error)",
+                                0,
+                                0,
+                                4096
+                            );
+                        }
+                    }
+                }
+            };
+
+            // Clean up timer on form closing
+            this.FormClosing += (s, e) =>
+            {
+                if (_tokenUpdateTimer != null)
+                {
+                    _tokenUpdateTimer.Stop();
+                    _tokenUpdateTimer.Dispose();
                 }
             };
         }

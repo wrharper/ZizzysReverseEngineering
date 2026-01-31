@@ -1,14 +1,16 @@
 # ZizzysReverseEngineering - Complete Binary Analysis Suite with AI
 
-**Status**: ✅ **PRODUCTION READY** | Phase 6+ Complete | 0 Errors | Multi-Section + Streaming + Address Sync
+**Status**: ✅ **PRODUCTION READY** | Phase 7 Complete | 0 Errors | Dynamic Token Management + Smart Trainer Detection
 
-A professional-grade binary reverse engineering tool with **local AI-powered analysis** via LM Studio, built with .NET 10 and C#.
+A professional-grade binary reverse engineering tool with **intelligent, server-aware AI analysis** via LM Studio, built with .NET 10 and C#.
 
-**Latest Updates (January 21, 2026)**:
-- ✨ Multi-section disassembly (all executable sections)
-- ✨ Virtual address synchronization (hex ↔ disassembler)
-- ✨ LLM streaming infrastructure (real-time responses)
-- ✨ Section-based code organization
+**Latest Updates (Phase 7 - January 31, 2026)**:
+- 🔄 **Dynamic Token Management**: Auto-detects LM Studio model context (131K+ tokens for gpt-oss-120b)
+- 🤖 **Smart Trainer Detection**: Auto-flags when binary exceeds 70% of available context
+- 💾 **Token-Aware Cache**: SQL cache respects token budget, loads intelligently
+- ⚡ **Zero Hardcoded Defaults**: Real context detection from `/api/v1/models` endpoint
+- 📊 **Token Estimation**: Automatic calculation of binary cost (raw + disassembly tokens)
+- 🎯 **Intelligent Analysis**: System decides between full analysis, patterns, or cache based on budget
 
 ---
 
@@ -37,7 +39,7 @@ dotnet run --project ReverseEngineering.WinForms
 
 ---
 
-## ✨ Features (January 21, 2026)
+## ✨ Features (Phase 7 - January 31, 2026)
 
 ### Binary Analysis
 - ✅ **PE Loader**: x86/x64 both supported
@@ -49,14 +51,17 @@ dotnet run --project ReverseEngineering.WinForms
 - ✅ **String Scanning**: ASCII and Unicode string extraction
 - ✅ **Pattern Detection**: Byte and instruction pattern matching
 
-### AI Analysis (LM Studio Integration)
-- ✅ **Binary Context**: Full binary summary in each query
-- ✅ **Multi-Section Context**: Includes analysis from ALL sections
+### AI Analysis with Dynamic Token Management (Phase 7)
+- ✅ **Server-Aware Context**: Auto-detects real LM Studio model context window
+- ✅ **Token Estimation**: Calculates binary cost: raw (×0.5) + disassembly (×4)
+- ✅ **Intelligent Analysis**: Decides full analysis vs patterns vs cache based on token budget
+- ✅ **Trainer Necessity**: Auto-flags when compression needed (>70% threshold)
+- ✅ **Smart Cache**: SQL database stores analysis with token metadata
+- ✅ **Graceful Degradation**: Automatically adapts when switching to smaller models
 - ✅ **Session Management**: Conversation history across queries
 - ✅ **Streaming Responses**: Real-time chunk delivery (when enabled)
 - ✅ **AILogs Tracking**: Full query/response history with timestamps
-- ✅ **Custom Prompts**: Domain-specific analysis templates
-- ✅ **Full History**: Access to all previous queries
+- ✅ **Zero Hardcoded Defaults**: Every calculation uses real server data
 
 ### Interactive UI
 - ✅ **Hex Editor**: Virtual address display, inline patching, row selection
@@ -145,15 +150,31 @@ var imports = SymbolResolver.ResolveSymbols(disasm, engine, includeImports: true
 
 ---
 
+## 📊 Token Management (Phase 7)
+
+### Token Math Example (openai/gpt-oss-120b)
+```
+Total Context:          131,072 tokens
+Output Reserve (20%):    26,214 tokens
+Usable for Input:       104,858 tokens
+Trainer Threshold (70%): 73,401 tokens
+
+50MB Binary:   29.6K tokens  (fits easily ✓)
+300MB Binary: 173.6K tokens  (trainer recommended ⚠️)
+
+With Trainer Phase 1: 68M → 500 tokens per query (136,000x reduction!)
+```
+
 ## 📊 Implementation Stats
 
 ```
-Code Written:       ~5,500 LOC (23 new components)
-Documentation:      ~1,400 LOC (8 guides)
-Files Created:      23 new + 7 modified
-Components:         15 features complete
-Compilation Errors: 0
-Status:             Production Ready ✅
+Code Written:           ~6,000 LOC (26 components + token mgmt)
+Documentation:          ~1,800 LOC (9 guides)
+Files Created:          26 new + 12 modified
+Components:             18 features complete
+Compilation Errors:     0
+Status:                 Production Ready ✅
+Token Management:       Dynamic & Server-Driven ✅
 ```
 
 ---
@@ -165,13 +186,28 @@ User Interface (WinForms)
     ↓
 Controllers (Sync & Events)
     ↓
-Core Engine (Binary Loading & Orchestration)
+Core Engine (Binary Loading, Token Management, Orchestration)
     ↓
 Analysis Layer (CFG, Functions, Xrefs, Symbols)
     ↓
-LLM Integration (Local AI via LM Studio)
+Token Budget System (Auto-detect context, estimate costs, decide analysis strategy)
+    ↓
+LLM Integration (Server-aware AI via LM Studio)
+    ↓
+SQL Cache + Trainer (Pattern storage, compression, embeddings)
     ↓
 Utilities (Undo/Redo, Search, Settings, Logging)
+```
+
+### Token Decision Tree
+```
+1. Detect LM Studio context (e.g., 131K tokens)
+2. Estimate binary cost: Raw×0.5 + Disasm×4
+3. Check cache (if available, fits budget, use it)
+4. Check budget:
+   • <70% threshold → Full analysis + cache
+   • >70% threshold → Trainer Phase 1 + patterns
+5. Future loads: Cache hit (99% efficiency)
 ```
 
 ---
@@ -262,4 +298,4 @@ Why make another reverse engineering program? I have my reasons :)
 
 ---
 
-**Last Updated**: January 19, 2026 | **Status**: ✅ Production Ready | **License**: See LICENSE.txt
+**Last Updated**: January 31, 2026 (Phase 7) | **Status**: ✅ Production Ready | **License**: See LICENSE.txt

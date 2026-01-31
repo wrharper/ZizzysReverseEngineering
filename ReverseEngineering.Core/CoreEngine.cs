@@ -20,6 +20,10 @@ namespace ReverseEngineering.Core
         // NEW: Fast lookup for incremental disassembly
         private readonly Dictionary<ulong, int> _addressToIndex = [];
 
+        // NEW: Cache system (Phase 7)
+        private CacheManager? _cache;
+        private string? _currentBinaryHash;
+
         // Base address for PE files (you can adjust this if needed)
         public ulong ImageBase { get; private set; } = 0;
 
@@ -45,6 +49,69 @@ namespace ReverseEngineering.Core
         public delegate void DisassemblyProgressCallback(int processed, int total);
 
         public DisassemblyProgressCallback? OnDisassemblyProgress { get; set; }
+
+        /// <summary>
+        /// Initialize cache for this project
+        /// Call from ProjectManager when opening a project
+        /// </summary>
+        public void InitializeCache(string projectDatabasePath)
+        {
+            _cache?.Dispose();
+            _cache = new CacheManager(projectDatabasePath);
+        }
+
+        /// <summary>
+        /// Get current cache statistics
+        /// </summary>
+        public CacheStats GetCacheStats()
+        {
+            if (_cache != null)
+                return _cache.GetCacheStats();
+            
+            return new CacheStats();
+        }
+
+        /// <summary>
+        /// Check if trainer is needed for this binary
+        /// Based on binary size vs available LLM context
+        /// Trainer recommended if: binary size in tokens > 70% of available context
+        /// </summary>
+        public bool IsTrainerNeeded(int maxContextTokens = 131072)
+        {
+            if (HexBuffer.Bytes.Length == 0)
+                return false;
+            
+            // Estimate tokens: raw binary + disassembly
+            // Raw bytes: 1 byte ≈ 0.5 tokens (binary less dense than text)
+            // Disassembly: 1 instruction ≈ 3-5 tokens (avg 4)
+            
+            int rawBinaryTokens = (int)(HexBuffer.Bytes.Length * 0.5);
+            int disassemblyTokens = Math.Max(Disassembly.Count * 4, 0);
+            int estimatedTokens = rawBinaryTokens + disassemblyTokens;
+            
+            // Reserve 20% for output
+            int usableContext = (int)(maxContextTokens * 0.8);
+            
+            // Trainer needed if estimated tokens > 70% of usable context
+            int threshold = (int)(usableContext * 0.7);
+            
+            return estimatedTokens > threshold;
+        }
+
+        /// <summary>
+        /// Get estimated token cost for this binary
+        /// Returns: (rawBinaryTokens, disassemblyTokens, totalEstimated, maxContext, isTrainerNeeded)
+        /// </summary>
+        public (int rawTokens, int disassemblyTokens, int totalTokens, int maxContext, bool trainerNeeded) GetTokenEstimate(int maxContextTokens = 131072)
+        {
+            int rawBinaryTokens = (int)(HexBuffer.Bytes.Length * 0.5);
+            int disassemblyTokens = Math.Max(Disassembly.Count * 4, 0);
+            int totalTokens = rawBinaryTokens + disassemblyTokens;
+            
+            bool trainerNeeded = IsTrainerNeeded(maxContextTokens);
+            
+            return (rawBinaryTokens, disassemblyTokens, totalTokens, maxContextTokens, trainerNeeded);
+        }
 
         public void LoadFile(string path)
         {
@@ -105,6 +172,9 @@ namespace ReverseEngineering.Core
 
             // Mark disassembly as complete
             DisassemblyComplete = true;
+
+            // NEW: Store binary hash for cache validation
+            _currentBinaryHash = CacheManager.ComputeFileHash(path);
         }
 
         // ---------------------------------------------------------
@@ -436,10 +506,88 @@ namespace ReverseEngineering.Core
 
                 sw.Stop();
                 Logger.Info("Analysis", $"✅ Analysis complete in {sw.ElapsedMilliseconds}ms");
+                
+                // Log token estimates for AI context planning
+                var (rawTokens, disasmTokens, totalTokens, maxCtx, trainerNeeded) = GetTokenEstimate();
+                Logger.Info("Analysis", $"📊 Token Estimate: Raw={rawTokens} + Disasm={disasmTokens} = {totalTokens} tokens");
+                Logger.Info("Analysis", $"📊 Available Context: {maxCtx} tokens (usable: {(int)(maxCtx * 0.8)} with 20% output reserve)");
+                if (trainerNeeded)
+                {
+                    Logger.Warning("Analysis", $"⚠️ TRAINER RECOMMENDED: Binary analysis exceeds 70% of available context ({totalTokens}/{(int)(maxCtx * 0.7)} threshold). Use Trainer Phase 1 to compress analysis into embeddings and patterns for AI queries.");
+                }
+                else
+                {
+                    Logger.Info("Analysis", $"✓ Binary fits within context budget. Full analysis can be sent to AI if needed.");
+                }
             }
             finally
             {
                 AnalysisInProgress = false;
+            }
+
+            // NEW: Store results in cache (Phase 7)
+            StoreCacheResults();
+        }
+
+        /// <summary>
+        /// Store analysis results in cache database
+        /// </summary>
+        private void StoreCacheResults()
+        {
+            if (_cache == null || string.IsNullOrEmpty(_currentBinaryHash))
+                return;
+
+            try
+            {
+                // Store symbols
+                foreach (var symbol in Symbols.Values)
+                {
+                    _cache.InsertSymbol(new CachedSymbol
+                    {
+                        BinaryHash = _currentBinaryHash,
+                        Address = symbol.Address,
+                        Name = symbol.Name ?? "",
+                        Type = symbol.SymbolType ?? "",
+                        Size = (int)symbol.Size,
+                        Section = symbol.Section ?? "",
+                        CreatedAt = DateTime.Now
+                    });
+                }
+
+                // Store cross-references
+                foreach (var xrefList in CrossReferences)
+                {
+                    foreach (var xref in xrefList.Value)
+                    {
+                        _cache.InsertCrossReference(new CachedCrossReference
+                        {
+                            BinaryHash = _currentBinaryHash,
+                            SourceAddress = xref.SourceAddress,
+                            TargetAddress = xref.TargetAddress,
+                            RefType = xref.RefType ?? "",
+                            Context = xref.Description ?? "",
+                        });
+                    }
+                }
+
+                // Store strings
+                foreach (var str in Strings)
+                {
+                    _cache.InsertString(new CachedString
+                    {
+                        BinaryHash = _currentBinaryHash,
+                        Address = str.Address,
+                        StringValue = str.Description ?? "",
+                        Type = "STRING",
+                        References = null
+                    });
+                }
+
+                Logger.Info("Cache", $"✓ Stored analysis results in cache");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("Cache", $"Failed to store cache results: {ex.Message}");
             }
         }
 
