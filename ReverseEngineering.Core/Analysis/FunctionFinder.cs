@@ -81,35 +81,45 @@ namespace ReverseEngineering.Core.Analysis
                 Logger.Debug("FunctionFinder", $"Found {functions.Count} total functions");
             }
 
-            // Step 6: Build CFG for each function (limit to first 500 to avoid timeout)
-            Logger.Debug("FunctionFinder", "Building CFG for each function...");
-            int cfgCount = 0;
-            int cfgLimit = Math.Min(500, functions.Count);  // Limit to avoid timeout on binaries with many false positive functions
-            int cfgIndex = 0;
-            var cfgSw = System.Diagnostics.Stopwatch.StartNew();
-            foreach (var func in functions.Values.Take(cfgLimit))
-            {
-                try
-                {
-                    func.CFG = BasicBlockBuilder.BuildCFG(disassembly, func.Address);
-                    cfgCount++;
-                }
-                catch
-                {
-                    // Silently fail if CFG build fails for this function
-                }
-                
-                cfgIndex++;
-                if (cfgIndex % 10 == 0 || cfgIndex == cfgLimit)
-                {
-                    Logger.Debug("FunctionFinder", $"  CFG progress: {cfgIndex}/{cfgLimit} ({cfgSw.ElapsedMilliseconds}ms)");
-                }
-            }
-            cfgSw.Stop();
-            Logger.Debug("FunctionFinder", $"Built CFG for {cfgCount}/{cfgLimit} functions ({cfgSw.ElapsedMilliseconds}ms total)");
-            Logger.Info("FunctionFinder", $"CFG building complete: {cfgCount} CFGs built, {cfgLimit} total functions");
+            // Step 6: DO NOT build CFGs here – they will be built lazily on demand
+            foreach (var func in functions.Values)
+                func.CFG = null;
+
+            Logger.Info("FunctionFinder", $"Function discovery complete: {functions.Count} functions, CFGs will be built lazily.");
 
             return functions.Values.OrderBy(f => f.Address).ToList();
+        }
+
+        public static List<Instruction> GetFunctionInstructions(
+            List<Instruction> disasm,
+            ulong funcAddress)
+        {
+            var result = new List<Instruction>();
+
+            // Find the starting index
+            int start = disasm.FindIndex(i => i.Address == funcAddress);
+            if (start < 0)
+                return result;
+
+            int size = 0;
+
+            for (int i = start; i < disasm.Count; i++)
+            {
+                var ins = disasm[i];
+                result.Add(ins);
+
+                size += ins.Length;
+
+                // Stop at RET
+                if (ins.Raw != null && ins.Raw.Value.Mnemonic == Mnemonic.Ret)
+                    break;
+
+                // Safety: stop if function grows too large
+                if (size > MaxFunctionSize)
+                    break;
+            }
+
+            return result;
         }
 
         // ---------------------------------------------------------

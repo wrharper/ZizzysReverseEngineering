@@ -459,16 +459,9 @@ namespace ReverseEngineering.Core
                 Functions = FunctionFinder.FindFunctions(Disassembly, this);
                 Logger.Info("Analysis", $"✓ Found {Functions.Count} functions ({sw.ElapsedMilliseconds}ms)");
 
-                // Step 2: Build CFG from entry point
-                Logger.Info("Analysis", "Step 2/6: Building control flow graph...");
-                if (Disassembly.Count > 0)
-                {
-                    var entryPoint = Disassembly[0].Address;
-                    CFG = BasicBlockBuilder.BuildCFG(Disassembly, entryPoint);
-                    if (CFG != null)
-                        Logger.Debug("Analysis", $"  Main CFG: {CFG.Blocks.Count} blocks");
-                }
-                Logger.Info("Analysis", $"✓ Built CFG ({sw.ElapsedMilliseconds}ms)");
+                // Step 2: CFG skipped (lazy on-demand)
+                Logger.Info("Analysis", "Step 2/6: Skipping CFG (lazy on-demand)");
+                CFG = null;
 
                 // Step 3: Find cross-references
                 Logger.Info("Analysis", "Step 3/6: Finding cross-references...");
@@ -480,45 +473,38 @@ namespace ReverseEngineering.Core
                 Symbols = SymbolResolver.ResolveSymbols(Disassembly, this);
                 Logger.Info("Analysis", $"✓ Resolved {Symbols.Count} symbols ({sw.ElapsedMilliseconds}ms)");
 
-                // Step 5: Extract strings from binary
+                // Step 5: Extract strings
                 Logger.Info("Analysis", "Step 5/6: Extracting strings...");
                 var rawStrings = PatternMatcher.FindStrings(HexBuffer.Bytes, minLength: 3);
                 Logger.Info("Analysis", $"Found {rawStrings.Count} raw strings");
-                // Convert file offsets to virtual addresses
-                Strings = rawStrings.Select(s =>
+
+                Strings = rawStrings.Select(s => new PatternMatch
                 {
-                    // For now, use file offset + ImageBase as approximation
-                    // In a full PE parser, would convert via section headers
-                    return new PatternMatch
-                    {
-                        Address = ImageBase + (ulong)s.Offset,
-                        Offset = s.Offset,
-                        MatchedBytes = s.MatchedBytes,
-                        Description = s.Description
-                    };
+                    Address = ImageBase + (ulong)s.Offset,
+                    Offset = s.Offset,
+                    MatchedBytes = s.MatchedBytes,
+                    Description = s.Description
                 }).ToList();
+
                 Logger.Info("Analysis", $"✓ Extracted {Strings.Count} strings ({sw.ElapsedMilliseconds}ms)");
 
-                // Step 6: Annotate instructions with metadata
+                // Step 6: Annotate instructions
                 Logger.Info("Analysis", "Step 6/6: Annotating instructions...");
                 AnnotateInstructions();
                 Logger.Info("Analysis", $"✓ Annotated instructions ({sw.ElapsedMilliseconds}ms)");
 
                 sw.Stop();
                 Logger.Info("Analysis", $"✅ Analysis complete in {sw.ElapsedMilliseconds}ms");
-                
-                // Log token estimates for AI context planning
+
+                // Token estimate
                 var (rawTokens, disasmTokens, totalTokens, maxCtx, trainerNeeded) = GetTokenEstimate();
                 Logger.Info("Analysis", $"📊 Token Estimate: Raw={rawTokens} + Disasm={disasmTokens} = {totalTokens} tokens");
                 Logger.Info("Analysis", $"📊 Available Context: {maxCtx} tokens (usable: {(int)(maxCtx * 0.8)} with 20% output reserve)");
+
                 if (trainerNeeded)
-                {
-                    Logger.Warning("Analysis", $"⚠️ TRAINER RECOMMENDED: Binary analysis exceeds 70% of available context ({totalTokens}/{(int)(maxCtx * 0.7)} threshold). Use Trainer Phase 1 to compress analysis into embeddings and patterns for AI queries.");
-                }
+                    Logger.Warning("Analysis", $"⚠️ TRAINER RECOMMENDED: Binary analysis exceeds 70% of available context.");
                 else
-                {
-                    Logger.Info("Analysis", $"✓ Binary fits within context budget. Full analysis can be sent to AI if needed.");
-                }
+                    Logger.Info("Analysis", $"✓ Binary fits within context budget.");
             }
             finally
             {

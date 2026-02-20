@@ -28,9 +28,6 @@ namespace ReverseEngineering.WinForms.Settings
         private CheckBox _autoAnalyzeLoadCheckBox = null!;
         private CheckBox _autoAnalyzePatchCheckBox = null!;
         private NumericUpDown _maxFunctionSizeNumeric = null!;
-        private CheckBox _includeImportsCheckBox = null!;
-        private CheckBox _includeExportsCheckBox = null!;
-        private CheckBox _scanStringsCheckBox = null!;
 
         // ---------------------------------------------------------
         //  UI TAB CONTROLS
@@ -40,7 +37,6 @@ namespace ReverseEngineering.WinForms.Settings
         private NumericUpDown _fontSizeNumeric = null!;
         private CheckBox _hexUppercaseCheckBox = null!;
         private NumericUpDown _hexBytesPerRowNumeric = null!;
-        private CheckBox _rememberLayoutCheckBox = null!;
 
         // ---------------------------------------------------------
         //  ADVANCED TAB CONTROLS
@@ -89,7 +85,6 @@ namespace ReverseEngineering.WinForms.Settings
             mainPanel.Controls.Add(_tabControl);
 
             _tabControl.TabPages.Add(CreateLMStudioTab());
-            _tabControl.TabPages.Add(CreateAnalysisTab());
             _tabControl.TabPages.Add(CreateUITab());
             _tabControl.TabPages.Add(CreateAdvancedTab());
 
@@ -221,40 +216,6 @@ namespace ReverseEngineering.WinForms.Settings
         }
 
         // ---------------------------------------------------------
-        //  ANALYSIS TAB
-        // ---------------------------------------------------------
-        private TabPage CreateAnalysisTab()
-        {
-            var tab = new TabPage { Text = "Analysis", BackColor = ThemeManager.CurrentTheme.BackColor, ForeColor = ThemeManager.CurrentTheme.ForeColor };
-            var panel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(15) };
-            tab.Controls.Add(panel);
-
-            int y = 10;
-
-            _autoAnalyzeLoadCheckBox = AddCheckBox(panel, "Auto-analyze on load", 10, ref y, _settings.Analysis.AutoAnalyzeOnLoad);
-            _autoAnalyzePatchCheckBox = AddCheckBox(panel, "Auto-analyze on patch", 10, ref y, _settings.Analysis.AutoAnalyzeOnPatch);
-            _includeImportsCheckBox = AddCheckBox(panel, "Include imports in analysis", 10, ref y, _settings.Analysis.IncludeImportsInAnalysis);
-            _includeExportsCheckBox = AddCheckBox(panel, "Include exports in analysis", 10, ref y, _settings.Analysis.IncludeExportsInAnalysis);
-            _scanStringsCheckBox = AddCheckBox(panel, "Scan for strings", 10, ref y, _settings.Analysis.ScanStrings);
-
-            y += 10;
-            AddLabel(panel, "Max Function Size:", 10, y);
-            _maxFunctionSizeNumeric = new NumericUpDown 
-            { 
-                Minimum = 100,
-                Maximum = 100000,
-                Value = Math.Clamp(_settings.Analysis.MaxFunctionSize, 100, 100000),
-                Width = 150, 
-                Location = new Point(150, y), 
-                BackColor = ThemeManager.CurrentTheme.PanelColor, 
-                ForeColor = ThemeManager.CurrentTheme.ForeColor 
-            };
-            panel.Controls.Add(_maxFunctionSizeNumeric);
-
-            return tab;
-        }
-
-        // ---------------------------------------------------------
         //  UI TAB
         // ---------------------------------------------------------
         private TabPage CreateUITab()
@@ -313,8 +274,6 @@ namespace ReverseEngineering.WinForms.Settings
             };
             panel.Controls.Add(_hexBytesPerRowNumeric);
             y += 30;
-
-            _rememberLayoutCheckBox = AddCheckBox(panel, "Remember window layout", 10, ref y, _settings.UI.RememberLayout);
 
             return tab;
         }

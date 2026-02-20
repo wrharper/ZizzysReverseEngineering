@@ -1,13 +1,11 @@
 ﻿using ReverseEngineering.Core;
+using ReverseEngineering.Core.Analysis;
 using ReverseEngineering.Core.LLM;
+using ReverseEngineering.WinForms.GraphView;
 using ReverseEngineering.WinForms.HexEditor;
 using ReverseEngineering.WinForms.MainWindow;
-using ReverseEngineering.WinForms.LLM;
-using ReverseEngineering.WinForms.SymbolView;
-using ReverseEngineering.WinForms.GraphView;
 using ReverseEngineering.WinForms.StringView;
-using System;
-using System.Windows.Forms;
+using ReverseEngineering.WinForms.SymbolView;
 
 namespace ReverseEngineering.WinForms
 {
@@ -20,6 +18,7 @@ namespace ReverseEngineering.WinForms
 
         private readonly MainMenuController _menuController;
         private readonly ThemeMenuController _themeController;
+        private readonly FunctionListControl _functionList;
         private readonly HexEditorController _hexController;
         private readonly DisassemblyController _disasmController;
         private readonly AnalysisController? _analysisController;
@@ -52,12 +51,28 @@ namespace ReverseEngineering.WinForms
             // ---------------------------------------------------------
             _llmClient = new LocalLLMClient();
 
+            _functionList = new FunctionListControl();
             // ---------------------------------------------------------
             //  CONTROLLERS (RichTextBox disassembly)
             // ---------------------------------------------------------
             _disasmController = new DisassemblyController(disasmView, hexEditor, _core);
 
-            _analysisController = new AnalysisController(_core, symbolTree, graphControl, _llmClient, llmPane, null, stringsControl);
+            // DisassemblyControl for AI (not visible in UI)
+            disasmControlForAI.Visible = false;
+            // Optionally, keep it in sync with disasmView if needed
+
+            _analysisController = new AnalysisController(
+                _core,
+                symbolTree,
+                graphControl,
+                _llmClient,
+                llmPane,
+                null,
+                stringsControl,
+                hexEditor,
+                disasmControlForAI,
+                peInfoControl
+            );
 
             _menuController = new MainMenuController(
                 this,
@@ -90,6 +105,7 @@ namespace ReverseEngineering.WinForms
             // ---------------------------------------------------------
             //  EVENT WIRING
             // ---------------------------------------------------------
+            _functionList.FunctionSelected += OnFunctionSelected;
             hexEditor.BytesChanged += HexEditor_BytesChanged;
             hexEditor.SelectionChanged += HexEditor_SelectionChanged;
 
@@ -120,8 +136,10 @@ namespace ReverseEngineering.WinForms
             var leftTabs = new TabControl { Dock = DockStyle.Fill };
             hexEditor.Dock = DockStyle.Fill;
             disasmView.Dock = DockStyle.Fill;
+            functionListControl.Dock = DockStyle.Fill;
             debugLogControl.Dock = DockStyle.Fill;
-            
+
+            // LEFT TABS (Hex, Disasm, Functions)
             var hexPage = new TabPage("Hex Editor");
             hexPage.Controls.Add(hexEditor);
             leftTabs.TabPages.Add(hexPage);
@@ -129,6 +147,10 @@ namespace ReverseEngineering.WinForms
             var disasmPage = new TabPage("Disassembly");
             disasmPage.Controls.Add(disasmView);
             leftTabs.TabPages.Add(disasmPage);
+
+            var functionsPage = new TabPage("Functions");
+            functionsPage.Controls.Add(functionListControl);
+            leftTabs.TabPages.Add(functionsPage);
 
             var debugPage = new TabPage("Debug Log");
             debugPage.Controls.Add(debugLogControl);
@@ -388,6 +410,28 @@ namespace ReverseEngineering.WinForms
             _core.RebuildDisassemblyFromBuffer();
             _disasmController.Load(_core);
         }
+
+        // ---------------------------------------------------------
+        //  FUNCTION SELECTED
+        // ---------------------------------------------------------
+        private void OnFunctionSelected(Function func)
+        {
+            if (_core == null)
+                return;
+
+            // Extract instructions for this function
+            var ins = FunctionFinder.GetFunctionInstructions(
+                _core.Disassembly,
+                func.Address
+            );
+
+            disasmView.SetInstructions(ins);
+
+            // Lazy CFG build (optional)
+            if (func.CFG == null)
+                func.CFG = BasicBlockBuilder.BuildCFG(_core.Disassembly, func.Address);
+        }
+
 
         // ---------------------------------------------------------
         //  CONTEXT MENUS

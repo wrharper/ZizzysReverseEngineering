@@ -1,3 +1,4 @@
+// ...existing code...
 #nullable disable
 
 using System;
@@ -12,6 +13,28 @@ namespace ReverseEngineering.WinForms
     /// </summary>
     public partial class PEInfoControl : UserControl
     {
+        /// <summary>
+        /// Returns the visible PE info tree as a string (matches what user sees in tab)
+        /// </summary>
+        public string GetVisibleText()
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (TreeNode node in _treeView.Nodes)
+            {
+                WriteNodeRecursive(node, sb, 0);
+            }
+            return sb.ToString();
+        }
+
+        private void WriteNodeRecursive(TreeNode node, System.Text.StringBuilder sb, int indent)
+        {
+            sb.Append(new string(' ', indent * 2));
+            sb.AppendLine(node.Text);
+            foreach (TreeNode child in node.Nodes)
+            {
+                WriteNodeRecursive(child, sb, indent + 1);
+            }
+        }
         private PEHeaderExtractor.PEInfo? _peInfo;
         
         public event EventHandler<NavigateEventArgs>? Navigate;

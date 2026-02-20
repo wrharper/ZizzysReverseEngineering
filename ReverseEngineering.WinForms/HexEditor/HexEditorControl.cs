@@ -1,8 +1,10 @@
-﻿using System;
-using System.Drawing;
-using System.Windows.Forms;
+﻿// ...existing code...
 using ReverseEngineering.Core;
 using ReverseEngineering.WinForms.HexEditor;
+using System;
+using System.Drawing;
+using System.Text;
+using System.Windows.Forms;
 
 namespace ReverseEngineering.WinForms.HexEditor
 {
@@ -525,5 +527,38 @@ namespace ReverseEngineering.WinForms.HexEditor
             }
             base.Dispose(disposing);
         }
+        public string GetAllText()
+        {
+            var sb = new StringBuilder();
+            for (int row = 0; row < _state.TotalRows; row++)
+            {
+                int start = row * HexEditorState.BytesPerRow;
+                sb.AppendLine(_state.Buffer.GetFullLineString(start));
+            }
+            return sb.ToString();
+        }
+        /// <summary>
+        /// Returns the currently visible hex lines as a string (matches what user sees in tab)
+        /// </summary>
+        public string GetVisibleText()
+        {
+            if (_state.Buffer == null || _state.LineHeight == 0)
+                return string.Empty;
+
+            int firstRow = Math.Max(0, _state.ScrollOffsetY / _state.LineHeight);
+            int visibleRows = Math.Max(1, Height / _state.LineHeight);
+            int lastRow = Math.Min(_state.TotalRows - 1, firstRow + visibleRows - 1);
+
+            var sb = new System.Text.StringBuilder();
+            for (int row = firstRow; row <= lastRow; row++)
+            {
+                int start = row * HexEditorState.BytesPerRow;
+                int end = Math.Min(start + HexEditorState.BytesPerRow - 1, _state.Buffer.Bytes.Length - 1);
+                sb.AppendLine(_state.Buffer.GetFullLineString(start));
+            }
+            return sb.ToString();
+        }
+
+// (Removed duplicate GetVisibleText implementation)
     }
 }

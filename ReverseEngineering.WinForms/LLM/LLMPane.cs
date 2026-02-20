@@ -1,16 +1,7 @@
 #nullable disable
 
-using System;
-using System.Windows.Forms;
-using ReverseEngineering.Core.LLM;
-
 namespace ReverseEngineering.WinForms.LLM
 {
-    /// <summary>
-    /// Master-level interactive RE tool: Chat interface with LM Studio
-    /// Users query the AI about the binary, AI can make patches/byte changes on request
-    /// Full binary context for intelligent analysis
-    /// </summary>
     public partial class LLMPane : UserControl
     {
         private RichTextBox _conversationBox;
@@ -18,7 +9,7 @@ namespace ReverseEngineering.WinForms.LLM
         private Button _sendButton;
         private Label _statusLabel;
         private bool _isProcessing;
-        private bool _isStreaming;  // Track if currently receiving streamed response
+        private bool _isStreaming;
 
         public event EventHandler<QueryEventArgs>? UserQuery;
 
@@ -49,7 +40,7 @@ namespace ReverseEngineering.WinForms.LLM
             statusPanel.Controls.Add(_statusLabel);
             Controls.Add(statusPanel);
 
-            // Middle: Conversation display (read-only)
+            // Middle: Conversation display
             _conversationBox = new RichTextBox
             {
                 Dock = DockStyle.Fill,
@@ -66,7 +57,7 @@ namespace ReverseEngineering.WinForms.LLM
             };
             Controls.Add(_conversationBox);
 
-            // Bottom: Input panel (question/request)
+            // Bottom: Input panel
             var inputPanel = new Panel
             {
                 Dock = DockStyle.Bottom,
@@ -77,13 +68,11 @@ namespace ReverseEngineering.WinForms.LLM
             _inputBox = new TextBox
             {
                 Multiline = true,
-                AcceptsTab = false,
                 AcceptsReturn = true,
                 WordWrap = true,
                 Dock = DockStyle.Fill,
                 Font = new System.Drawing.Font("Segoe UI", 9),
-                PlaceholderText = "Ask a question or request a patch...",
-                Margin = new Padding(0, 0, 5, 0)
+                PlaceholderText = "Ask a question or request a patch..."
             };
             inputPanel.Controls.Add(_inputBox);
 
@@ -99,16 +88,26 @@ namespace ReverseEngineering.WinForms.LLM
 
             Controls.Add(inputPanel);
         }
+        private bool IsUserAtBottom()
+        {
+            int visibleLines = _conversationBox.Height / _conversationBox.Font.Height;
+            int firstVisible = _conversationBox.GetLineFromCharIndex(_conversationBox.GetCharIndexFromPosition(new Point(0, 0)));
+            int lastVisible = firstVisible + visibleLines;
 
+            int totalLines = _conversationBox.Lines.Length;
+
+            // If the last visible line is within 2 lines of the end, consider it "at bottom"
+            return lastVisible >= totalLines - 2;
+        }
         private void SetupUI()
         {
-            // Already initialized in InitializeComponent
+            // Already initialized
         }
 
         private void OnSendClick(object? sender, EventArgs e)
         {
             if (_isProcessing) return;
-            
+
             var query = _inputBox.Text.Trim();
             if (string.IsNullOrWhiteSpace(query)) return;
 
@@ -125,15 +124,23 @@ namespace ReverseEngineering.WinForms.LLM
             _conversationBox.SelectionFont = new System.Drawing.Font(_conversationBox.Font, System.Drawing.FontStyle.Regular);
             _conversationBox.AppendText(query + "\n");
 
-            // Clear input
             _inputBox.Clear();
 
-            // Raise event for external handler
             UserQuery?.Invoke(this, new QueryEventArgs { Query = query });
         }
 
+        // -----------------------------
+        // THREAD-SAFE UI METHODS BELOW
+        // -----------------------------
+
         public void DisplayResponse(string response)
         {
+            if (InvokeRequired)
+            {
+                Invoke(new Action(() => DisplayResponse(response)));
+                return;
+            }
+
             _conversationBox.SelectionColor = System.Drawing.Color.LimeGreen;
             _conversationBox.SelectionFont = new System.Drawing.Font(_conversationBox.Font, System.Drawing.FontStyle.Bold);
             _conversationBox.AppendText("\n[AI]: ");
@@ -147,40 +154,63 @@ namespace ReverseEngineering.WinForms.LLM
             _sendButton.Enabled = true;
         }
 
-        /// <summary>
-        /// Start streaming response display (called before receiving chunks)
-        /// </summary>
         public void StartStreamingResponse()
         {
+            if (InvokeRequired)
+            {
+                Invoke(new Action(StartStreamingResponse));
+                return;
+            }
+
+            bool shouldScroll = IsUserAtBottom();
+
             _isStreaming = true;
-            _conversationBox.SelectionColor = System.Drawing.Color.LimeGreen;
-            _conversationBox.SelectionFont = new System.Drawing.Font(_conversationBox.Font, System.Drawing.FontStyle.Bold);
+            _conversationBox.SelectionColor = Color.LimeGreen;
+            _conversationBox.SelectionFont = new Font(_conversationBox.Font, FontStyle.Bold);
             _conversationBox.AppendText("\n[AI]: ");
             _conversationBox.SelectionColor = ThemeManager.CurrentTheme.ForeColor;
-            _conversationBox.SelectionFont = new System.Drawing.Font(_conversationBox.Font, System.Drawing.FontStyle.Regular);
+            _conversationBox.SelectionFont = new Font(_conversationBox.Font, FontStyle.Regular);
+
+            if (shouldScroll)
+                _conversationBox.ScrollToCaret();
         }
 
-        /// <summary>
-        /// Append a streamed chunk to the response (called for each received chunk)
-        /// </summary>
         public void AppendStreamedChunk(string chunk)
         {
+            if (InvokeRequired)
+            {
+                Invoke(new Action(() => AppendStreamedChunk(chunk)));
+                return;
+            }
+
+            bool shouldScroll = IsUserAtBottom();
+
             if (!_isStreaming)
                 StartStreamingResponse();
 
             _conversationBox.AppendText(chunk);
-            _conversationBox.ScrollToCaret(); // Auto-scroll as new content arrives
+
+            if (shouldScroll)
+                _conversationBox.ScrollToCaret();
         }
 
-        /// <summary>
-        /// Finish streaming response display (called when streaming is complete)
-        /// </summary>
         public void FinishStreamingResponse()
         {
+            if (InvokeRequired)
+            {
+                Invoke(new Action(FinishStreamingResponse));
+                return;
+            }
+
+            bool shouldScroll = IsUserAtBottom();
+
             _isStreaming = false;
             _conversationBox.AppendText("\n");
 
-            _statusLabel.ForeColor = System.Drawing.SystemColors.GrayText;
+            if (shouldScroll)
+                _conversationBox.ScrollToCaret();
+
+            _statusLabel.ForeColor = SystemColors.GrayText;
             _statusLabel.Text = "Ready";
             _isProcessing = false;
             _sendButton.Enabled = true;
@@ -188,6 +218,12 @@ namespace ReverseEngineering.WinForms.LLM
 
         public void DisplayError(string error)
         {
+            if (InvokeRequired)
+            {
+                Invoke(new Action(() => DisplayError(error)));
+                return;
+            }
+
             _conversationBox.SelectionColor = System.Drawing.Color.Red;
             _conversationBox.SelectionFont = new System.Drawing.Font(_conversationBox.Font, System.Drawing.FontStyle.Bold);
             _conversationBox.AppendText("\n[ERROR]: ");
@@ -203,6 +239,12 @@ namespace ReverseEngineering.WinForms.LLM
 
         public void SetAnalyzing(string task)
         {
+            if (InvokeRequired)
+            {
+                Invoke(new Action(() => SetAnalyzing(task)));
+                return;
+            }
+
             _statusLabel.Text = task;
             _statusLabel.ForeColor = System.Drawing.Color.Blue;
             _isProcessing = true;
@@ -213,6 +255,12 @@ namespace ReverseEngineering.WinForms.LLM
 
         public void Clear()
         {
+            if (InvokeRequired)
+            {
+                Invoke(new Action(Clear));
+                return;
+            }
+
             _conversationBox.Clear();
             _conversationBox.AppendText("AI RE Assistant ready.\n\nAsk questions like:\n" +
                                         "- What does this function do?\n" +
@@ -226,12 +274,8 @@ namespace ReverseEngineering.WinForms.LLM
         }
     }
 
-    /// <summary>
-    /// Event args for user queries
-    /// </summary>
     public class QueryEventArgs : EventArgs
     {
         public string Query { get; set; } = string.Empty;
     }
 }
-

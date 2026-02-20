@@ -1,44 +1,42 @@
-using System;
-using System.Diagnostics;
-using System.Threading;
-using System.Threading.Tasks;
 using ReverseEngineering.Core;
 using ReverseEngineering.Core.AILogs;
 using ReverseEngineering.Core.LLM;
-using ReverseEngineering.WinForms.GraphView;
-using ReverseEngineering.WinForms.SymbolView;
-using ReverseEngineering.WinForms.StringView;
-using ReverseEngineering.WinForms.LLM;
+using System.Diagnostics;
+using System.Text;
 
 namespace ReverseEngineering.WinForms.MainWindow
 {
-    /// <summary>
-    /// Controller to manage analysis views and update them when analysis completes.
-    /// Integrates LM Studio for AI-powered analysis.
-    /// </summary>
+
     public class AnalysisController
     {
+        private readonly List<object> _chatHistory = new();
+        private const int MaxMemoryMessages = 10; // keep last 10 turns
         private readonly CoreEngine _core;
-        private readonly SymbolTreeControl? _symbolTree;
-        private readonly GraphControl? _graphControl;
-        private readonly StringsControl? _stringsControl;
+        private readonly SymbolView.SymbolTreeControl? _symbolTree;
+        private readonly GraphView.GraphControl? _graphControl;
+        private readonly StringView.StringsControl? _stringsControl;
         private readonly LocalLLMClient? _llmClient;
-        private readonly LLMPane? _llmPane;
-        private readonly LLMAnalyzer? _llmAnalyzer;
+        private readonly LLM.LLMPane? _llmPane;
         private readonly AILogsManager? _aiLogs;
         private CancellationTokenSource? _analysisCts;
+        HexEditor.HexEditorControl? _hexEditor;
+        DisassemblyControl? _disasmView;
+        PEInfoControl? _peInfoControl;
 
         public event Action? AnalysisStarted;
         public event Action? AnalysisCompleted;
 
         public AnalysisController(
             CoreEngine core,
-            SymbolTreeControl? symbolTree = null,
-            GraphControl? graphControl = null,
+            SymbolView.SymbolTreeControl? symbolTree = null,
+            GraphView.GraphControl? graphControl = null,
             LocalLLMClient? llmClient = null,
-            LLMPane? llmPane = null,
+            LLM.LLMPane? llmPane = null,
             AILogsManager? aiLogs = null,
-            StringsControl? stringsControl = null)
+            StringView.StringsControl? stringsControl = null,
+            HexEditor.HexEditorControl? hexEditor = null,
+            DisassemblyControl? disasmView = null,
+            PEInfoControl? peInfoControl = null)
         {
             _core = core ?? throw new ArgumentNullException(nameof(core));
             _symbolTree = symbolTree;
@@ -46,87 +44,36 @@ namespace ReverseEngineering.WinForms.MainWindow
             _stringsControl = stringsControl;
             _llmClient = llmClient;
             _llmPane = llmPane;
-            _llmAnalyzer = llmClient != null ? new LLMAnalyzer(llmClient, core) : null;
             _aiLogs = aiLogs;
+            _hexEditor = hexEditor;
+            _disasmView = disasmView;
+            _peInfoControl = peInfoControl;
 
             // Wire up LLM chat interface
             if (_llmPane != null)
             {
-                _llmPane.UserQuery += OnUserLLMQuery;
+                //_llmPane.UserQuery += OnUserLLMQuery;
+                _llmPane.UserQuery += OnUserLLMStreamQuery;
             }
         }
 
-        // ---------------------------------------------------------
-        //  LLM CHAT EVENT HANDLER
-        // ---------------------------------------------------------
-        private async void OnUserLLMQuery(object? sender, QueryEventArgs e)
+        private void OnUserLLMStreamQuery(object? sender, LLM.QueryEventArgs e)
         {
             if (string.IsNullOrWhiteSpace(e.Query))
                 return;
-
-            await QueryLLMAsync(e.Query);
+            _ = QueryLLMStreamingAsync(e.Query);
         }
-
-        // ---------------------------------------------------------
-        //  ANALYSIS EXECUTION
-        // ---------------------------------------------------------
-        /// <summary>
-        /// Run analysis asynchronously.
-        /// </summary>
-        public async Task RunAnalysisAsync()
+        private void OnUserLLMQuery(object? sender, LLM.QueryEventArgs e)
         {
-            _analysisCts?.Cancel();
-            _analysisCts = new CancellationTokenSource();
-            var token = _analysisCts.Token;
-
-            AnalysisStarted?.Invoke();
-
-            try
-            {
-                await Task.Run(() => _core.RunAnalysis(), token);
-
-                // Update UI
-                if (!token.IsCancellationRequested)
-                {
-                    Logger.Info("UI", "Updating views...");
-                    UpdateViews();
-                    Logger.Info("UI", "✓ Views updated and displayed");
-                    AnalysisCompleted?.Invoke();
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                Logger.Warning("Analysis", "Analysis was cancelled");
-            }
-            catch (Exception ex)
-            {
-                Logger.Error("Analysis", "Analysis failed", ex);
-            }
-        }
-
-        /// <summary>
-        /// Cancel ongoing analysis.
-        /// </summary>
-        public void CancelAnalysis()
-        {
-            _analysisCts?.Cancel();
-        }
-
-        // ---------------------------------------------------------
-        //  VIEW UPDATES
-        // ---------------------------------------------------------
-        private void UpdateViews()
-        {
-            UpdateSymbolTree();
-            UpdateGraphView();
-            UpdateStringsView();
+            if (string.IsNullOrWhiteSpace(e.Query))
+                return;
+            _ = QueryLLMAsync(e.Query);
         }
 
         private void UpdateSymbolTree()
         {
             if (_symbolTree == null)
                 return;
-
             try
             {
                 _symbolTree.PopulateFromAnalysis();
@@ -142,7 +89,6 @@ namespace ReverseEngineering.WinForms.MainWindow
         {
             if (_stringsControl == null)
                 return;
-
             try
             {
                 _stringsControl.PopulateFromAnalysis();
@@ -161,19 +107,16 @@ namespace ReverseEngineering.WinForms.MainWindow
                 Logger.Debug("UI", "GraphControl is null");
                 return;
             }
-            
             if (_core.CFG == null)
             {
                 Logger.Debug("UI", "CFG is null");
                 return;
             }
-            
             if (_core.CFG.Blocks.Count == 0)
             {
                 Logger.Debug("UI", "CFG has no blocks");
                 return;
             }
-
             try
             {
                 _graphControl.DisplayCFG(_core.CFG);
@@ -185,7 +128,7 @@ namespace ReverseEngineering.WinForms.MainWindow
             }
         }
 
-        // ---------------------------------------------------------
+        // --------------------------------------------------------- 
         //  MANUAL NAVIGATION
         // ---------------------------------------------------------
         /// <summary>
@@ -208,34 +151,214 @@ namespace ReverseEngineering.WinForms.MainWindow
         /// The LLM can read the binary and make patches upon request.
         /// Response is displayed in real-time as chunks arrive.
         /// </summary>
-        public async Task QueryLLMAsync(string userQuery, CancellationToken cancellationToken = default)
+        string systemPromptCache = "";
+        public async Task QueryLLMStreamingAsync(string userQuery, CancellationToken cancellationToken = default)
         {
-            if (_llmPane == null || _llmAnalyzer == null)
+            if (_llmPane == null || _llmClient == null || _core == null)
                 return;
 
             var timer = Stopwatch.StartNew();
-            _llmPane.SetAnalyzing("Waiting for response...");
+            Logger.Info("AI", $"[LLM] Query started: '{userQuery}'");
 
             try
             {
-                var response = await _llmAnalyzer.QueryWithContextAsync(userQuery, cancellationToken);
+                // Build system prompt if needed
+                if (systemPromptCache == "")
+                {
+                    bool sendAll = false, sendPE = false, sendBytes = false, sendDisasm = false;
+
+                    var mainMenu = Application.OpenForms[0]?.Controls.OfType<MenuStrip>().FirstOrDefault();
+                    var menuController = mainMenu?.FindForm()?.Controls.OfType<MainMenuController>().FirstOrDefault();
+                    MainMenuController? sendMenuController = _llmPane.Parent?.Controls.OfType<MainMenuController>().FirstOrDefault()
+                        ?? _llmPane.FindForm()?.Controls.OfType<MainMenuController>().FirstOrDefault();
+
+                    if (sendMenuController != null)
+                    {
+                        sendAll = sendMenuController.SendAllEnabled;
+                        sendPE = sendMenuController.SendPEInfoEnabled;
+                        sendBytes = sendMenuController.SendBytesEnabled;
+                        sendDisasm = sendMenuController.SendDisassemblyEnabled;
+                    }
+                    else
+                    {
+                        sendAll = false;
+                        sendPE = sendBytes = sendDisasm = true;
+                    }
+
+                    var contextGenerator = new ReverseEngineering.Core.LLM.BinaryContextGenerator(_core);
+                    var context = contextGenerator.GenerateContext(new SystemContextData
+                    {
+                        SendPE = sendPE,
+                        SendBytes = sendBytes,
+                        SendDisasm = sendDisasm,
+                        DisasmView = _disasmView,
+                        HexEditor = _hexEditor,
+                        PEInfoControl = _peInfoControl
+                    });
+
+                    systemPromptCache = BinaryContextGenerator.GenerateSystemPrompt(context);
+                }
+
+                // -------------------------
+                // BUILD MESSAGE LIST (MEMORY)
+                // -------------------------
+                var messages = new List<object>
+        {
+            new { role = "system", content = systemPromptCache }
+        };
+
+                // Add rolling memory
+                messages.AddRange(_chatHistory);
+
+                // Add the new user message
+                messages.Add(new { role = "user", content = userQuery });
+
+                // -------------------------
+                // STREAMING MODE
+                // -------------------------
+                var fullResponse = new StringBuilder();
+
+                // Tell UI we are starting a streamed response
+                _llmPane.StartStreamingResponse();
+
+                await _llmClient.StreamChatAsync(
+                    messages,
+                    chunk =>
+                    {
+                        fullResponse.Append(chunk);
+                        _llmPane.AppendStreamedChunk(chunk);
+                    },
+                    cancellationToken
+                );
+
+                // Finish UI streaming
+                _llmPane.FinishStreamingResponse();
+
+                string aiResponse = fullResponse.ToString();
+
+                // -------------------------
+                // UPDATE MEMORY
+                // -------------------------
+                _chatHistory.Add(new { role = "user", content = userQuery });
+                _chatHistory.Add(new { role = "assistant", content = aiResponse });
+
+                // Trim memory
+                while (_chatHistory.Count > MaxMemoryMessages)
+                    _chatHistory.RemoveAt(0);
+
+                // -------------------------
+                // LOGGING
+                // -------------------------
+                timer.Stop();
+                Logger.Info("AI", $"[LLM] Query finished in {timer.ElapsedMilliseconds} ms");
+
+                if (_aiLogs != null)
+                {
+                    _aiLogs.SaveLogEntry(new AILogEntry
+                    {
+                        Operation = "LLMChat",
+                        Prompt = userQuery,
+                        AIOutput = aiResponse,
+                        Status = "Success",
+                        DurationMs = timer.ElapsedMilliseconds
+                    });
+                }
+
+                // You already streamed it, but DisplayResponse adds the final newline + resets UI
+                _llmPane.DisplayResponse(aiResponse);
+            }
+            catch (Exception ex)
+            {
                 timer.Stop();
 
-                // Log operation
+                if (_aiLogs != null)
+                {
+                    _aiLogs.SaveLogEntry(new AILogEntry
+                    {
+                        Operation = "LLMChat",
+                        Prompt = userQuery,
+                        AIOutput = $"Error: {ex.Message}",
+                        Status = "Error",
+                        DurationMs = timer.ElapsedMilliseconds
+                    });
+                }
+
+                _llmPane.DisplayError($"Error: {ex.Message}");
+            }
+        }
+        public async Task QueryLLMAsync(string userQuery, CancellationToken cancellationToken = default)
+        {
+            if (_llmPane == null || _llmClient == null || _core == null)
+                return;
+            var timer = Stopwatch.StartNew();
+            Logger.Info("AI", $"[LLM] Query started: '{userQuery}'");
+
+            try
+            {
+
+                // --- Build user prompt (only visible UI data, not full context) ---
+                var mainMenu = Application.OpenForms[0]?.Controls.OfType<MenuStrip>().FirstOrDefault();
+                var menuController = mainMenu?.FindForm()?.Controls.OfType<MainMenuController>().FirstOrDefault();
+                MainMenuController? sendMenuController = null;
+                if (_llmPane.Parent != null)
+                {
+                    sendMenuController = _llmPane.Parent.Controls.OfType<MainMenuController>().FirstOrDefault();
+                }
+                if (sendMenuController == null && _llmPane.FindForm() is Form form)
+                {
+                    sendMenuController = form.Controls.OfType<MainMenuController>().FirstOrDefault();
+                }
+
+                if (systemPromptCache == "")
+                {
+                    // If we can get the menu controller, use its state
+                    bool sendAll = false, sendPE = false, sendBytes = false, sendDisasm = false;
+                    if (sendMenuController != null)
+                    {
+                        sendAll = sendMenuController.SendAllEnabled;
+                        sendPE = sendMenuController.SendPEInfoEnabled;
+                        sendBytes = sendMenuController.SendBytesEnabled;
+                        sendDisasm = sendMenuController.SendDisassemblyEnabled;
+                    }
+                    else
+                    {
+                        // Default: all on
+                        sendAll = false;
+                        sendPE = sendBytes = sendDisasm = true;
+                    }
+
+                    // --- Build system prompt from current binary context ---
+                    var contextGenerator = new ReverseEngineering.Core.LLM.BinaryContextGenerator(_core);
+                    var context = contextGenerator.GenerateContext(new SystemContextData
+                    { 
+                        SendPE = sendPE,
+                        SendBytes = sendBytes,
+                        SendDisasm = sendDisasm,
+                        DisasmView = _disasmView,
+                        HexEditor = _hexEditor,
+                        PEInfoControl = _peInfoControl
+                    });
+                    systemPromptCache = BinaryContextGenerator.GenerateSystemPrompt(context);
+                }
+
+                // --- Send to LLM as chat (system prompt + user prompt) ---
+                string aiResponse = await _llmClient.ChatAsync(userQuery, systemPromptCache, cancellationToken);
+
+                timer.Stop();
+                Logger.Info("AI", $"[LLM] Query finished in {timer.ElapsedMilliseconds} ms");
                 if (_aiLogs != null)
                 {
                     var logEntry = new AILogEntry
                     {
                         Operation = "LLMChat",
                         Prompt = userQuery,
-                        AIOutput = response,
+                        AIOutput = aiResponse,
                         Status = "Success",
                         DurationMs = timer.ElapsedMilliseconds
                     };
                     _aiLogs.SaveLogEntry(logEntry);
                 }
-
-                _llmPane.DisplayResponse(response);
+                _llmPane.DisplayResponse(aiResponse);
             }
             catch (Exception ex)
             {
@@ -256,6 +379,39 @@ namespace ReverseEngineering.WinForms.MainWindow
                 }
 
                 _llmPane.DisplayError($"Error: {ex.Message}");
+            }
+        }
+        
+        public async Task RunAnalysisAsync()
+        {
+            _analysisCts?.Cancel();
+            _analysisCts = new CancellationTokenSource();
+            var token = _analysisCts.Token;
+
+            AnalysisStarted?.Invoke();
+
+            try
+            {
+                await Task.Run(() => _core.RunAnalysis(), token);
+
+                // Update UI
+                if (!token.IsCancellationRequested)
+                {
+                    Logger.Info("UI", "Updating views...");
+                    UpdateSymbolTree();
+                    UpdateGraphView();
+                    UpdateStringsView();
+                    Logger.Info("UI", "✓ Views updated and displayed");
+                    AnalysisCompleted?.Invoke();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                Logger.Warning("Analysis", "Analysis was cancelled");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("Analysis", "Analysis failed", ex);
             }
         }
     }

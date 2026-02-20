@@ -1,18 +1,9 @@
-﻿using System;
-using System.IO;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Windows.Forms;
-using ReverseEngineering.Core;
+﻿using ReverseEngineering.Core;
 using ReverseEngineering.Core.ProjectSystem;
 using ReverseEngineering.Core.AILogs;
 using ReverseEngineering.WinForms.HexEditor;
 using ReverseEngineering.WinForms.LLM;
 using ReverseEngineering.WinForms.AILogs;
-using ReverseEngineering.WinForms.Compatibility;
-using ReverseEngineering.WinForms.Debug;
-using ReverseEngineering.WinForms;
 
 namespace ReverseEngineering.WinForms.MainWindow
 {
@@ -186,10 +177,70 @@ namespace ReverseEngineering.WinForms.MainWindow
 
             _menu.Items.Add(debug);
 
+            // --------------------------------------------------------- 
+            //  SEND MENU (PE Info, Bytes, Disassembly, All)
+            // --------------------------------------------------------- 
+
+            // --- SEND MENU (checkable options) ---
+            var sendMenu = new ToolStripMenuItem("Send");
+            _sendPEInfoItem = new ToolStripMenuItem("Send PE Info", null, SendPEInfo) { CheckOnClick = true, Checked = true };
+            _sendBytesItem = new ToolStripMenuItem("Send Bytes", null, SendBytes) { CheckOnClick = true, Checked = true };
+            _sendDisasmItem = new ToolStripMenuItem("Send Disassembly", null, SendDisassembly) { CheckOnClick = true, Checked = true };
+            _sendAllItem = new ToolStripMenuItem("Send All", null, SendAll) { CheckOnClick = true, Checked = false };
+            sendMenu.DropDownItems.Add(_sendPEInfoItem);
+            sendMenu.DropDownItems.Add(_sendBytesItem);
+            sendMenu.DropDownItems.Add(_sendDisasmItem);
+            sendMenu.DropDownItems.Add(_sendAllItem);
+            _menu.Items.Add(sendMenu);
+
             // Subscribe to undo/redo changes to update menu
             _core.UndoRedo.HistoryChanged += UpdateUndoRedoMenu;
             UpdateUndoRedoMenu();
         }
+
+
+        // --- Send menu state ---
+        private ToolStripMenuItem _sendPEInfoItem;
+        private ToolStripMenuItem _sendBytesItem;
+        private ToolStripMenuItem _sendDisasmItem;
+        private ToolStripMenuItem _sendAllItem;
+
+        // --- Send menu handlers (toggle logic) ---
+        private void SendPEInfo(object? sender, EventArgs e)
+        {
+            // If All is checked, uncheck others
+            if (_sendPEInfoItem.Checked && _sendAllItem.Checked)
+                _sendAllItem.Checked = false;
+        }
+
+        private void SendBytes(object? sender, EventArgs e)
+        {
+            if (_sendBytesItem.Checked && _sendAllItem.Checked)
+                _sendAllItem.Checked = false;
+        }
+
+        private void SendDisassembly(object? sender, EventArgs e)
+        {
+            if (_sendDisasmItem.Checked && _sendAllItem.Checked)
+                _sendAllItem.Checked = false;
+        }
+
+        private void SendAll(object? sender, EventArgs e)
+        {
+            if (_sendAllItem.Checked)
+            {
+                // Uncheck all others
+                _sendPEInfoItem.Checked = false;
+                _sendBytesItem.Checked = false;
+                _sendDisasmItem.Checked = false;
+            }
+        }
+
+        // Expose send menu state for prompt construction
+        public bool SendPEInfoEnabled => _sendPEInfoItem.Checked;
+        public bool SendBytesEnabled => _sendBytesItem.Checked;
+        public bool SendDisassemblyEnabled => _sendDisasmItem.Checked;
+        public bool SendAllEnabled => _sendAllItem.Checked;
 
         private void UpdateUndoRedoMenu()
         {
@@ -416,145 +467,62 @@ namespace ReverseEngineering.WinForms.MainWindow
             // Clear LLM context for new binary
             _llmPane?.Clear();
 
-            // Show progress dialog while loading AND populating UI with current theme
-            using var progressDialog = new DisassemblyProgressDialog(ThemeManager.CurrentTheme);
-            bool dialogDisposed = false;
-            bool cancelRequested = false;
-            
-            _core.OnDisassemblyProgress = (processed, total) => 
-            {
-                try
-                {
-                    if (!dialogDisposed && !progressDialog.IsDisposed)
-                    {
-                        // Show 0-95% during binary load with detailed status
-                        progressDialog.UpdateProgress(processed, total, "Disassembling binary...");
-                    }
-                }
-                catch (ObjectDisposedException)
-                {
-                    // Dialog was disposed, ignore
-                }
-            };
-
+            Logger.Info("UI", "Loading hex editor...");
+            _suppressEvents = true;
             try
             {
-                // Initialize UI immediately with physical addresses (hex editor ready first)
-                _suppressEvents = true;
-                try
-                {
-                    if (!progressDialog.IsDisposed)
-                        progressDialog.UpdateProgress(0, 100, "Loading hex editor...");
-                    
-                    // Load hex editor first with binary file (uses physical offsets, no disassembly needed)
-                    byte[] fileBytes = File.ReadAllBytes(ofd.FileName);
-                    _hex.SetBuffer(new HexBuffer(fileBytes));
-                    _hex.SetImageBase(0);  // Physical addresses (file offsets) initially
-                    // Don't set CoreEngine yet - that enables virtual address lookup
-                    
-                    // Initialize disassembly as empty
-                    _disasmController.Initialize();
-                    
-                    if (!progressDialog.IsDisposed)
-                        progressDialog.UpdateProgress(1, 100, "Starting disassembly...");
-                }
-                finally
-                {
-                    _suppressEvents = false;
-                }
-
-                // Load in background to keep UI responsive
-                var task = Task.Run(() => 
-                {
-                    try
-                    {
-                        _core.LoadFile(ofd.FileName);
-                    }
-                    finally
-                    {
-                        // After load, update UI from main thread
-                        _form.Invoke(() =>
-                        {
-                            try
-                            {
-                                if (!progressDialog.IsDisposed)
-                                    progressDialog.UpdateProgress(95, 100, "Switching to virtual addresses...");
-                                
-                                // Hex editor already has buffer from initial load
-                                // Just add CoreEngine reference to enable virtual address lookup
-                                _suppressEvents = true;
-                                _hex.SetCoreEngine(_core);
-                                _hex.SetImageBase(_core.ImageBase);
-                                
-                                if (!progressDialog.IsDisposed)
-                                    progressDialog.UpdateProgress(97, 100, "Loading disassembly view...");
-                                
-                                _disasmController.Load(_core);
-                                
-                                if (!progressDialog.IsDisposed)
-                                    progressDialog.UpdateProgress(99, 100, "Finalizing...");
-                                
-                                _suppressEvents = false;
-
-                                Logger.Info("UI", $"Loaded binary: {ofd.FileName}");
-                                _statusFile.Text = Path.GetFileName(ofd.FileName);
-
-                                // Load and display PE info
-                                if (_peInfoControl != null && _core.PEInfo != null)
-                                {
-                                    _peInfoControl.LoadPEInfo(_core.PEInfo);
-                                    Logger.Info("UI", $"PE: {(_core.PEInfo.Is64Bit ? "x64" : "x86")} @ 0x{_core.PEInfo.ImageBase:X}, Entry: 0x{_core.PEInfo.AddressOfEntryPoint:X}");
-                                }
-
-                                // Close dialog
-                                if (!progressDialog.IsDisposed)
-                                {
-                                    progressDialog.UpdateProgress(100, 100, "Complete!");
-                                    progressDialog.Close();
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                Logger.Error("UI", $"Error during UI population: {ex.Message}");
-                                if (!progressDialog.IsDisposed)
-                                    progressDialog.Close();
-                                throw;
-                            }
-                        });
-                    }
-                });
-
-                // Show dialog modally - will close when everything completes or user cancels
-                var result = progressDialog.ShowDialog(_form);
-                cancelRequested = (result == DialogResult.Cancel);
-                
-                // Wait for load to complete
-                if (!cancelRequested)
-                {
-                    task.Wait();  // Wait for background load to finish
-                }
-                else
-                {
-                    Logger.Info("UI", "Binary load cancelled by user");
-                }
+                byte[] fileBytes = File.ReadAllBytes(ofd.FileName);
+                _hex.SetBuffer(new HexBuffer(fileBytes));
+                _hex.SetImageBase(0);  // Physical addresses (file offsets) initially
+                _disasmController.Initialize();
             }
             finally
             {
-                // Clear callback
-                _core.OnDisassemblyProgress = null;
+                _suppressEvents = false;
             }
 
-            if (cancelRequested && _core.HexBuffer != null && _core.HexBuffer.Bytes.Length > 0)
+            Logger.Info("UI", "Starting disassembly...");
+            Task.Run(() =>
             {
-                Logger.Info("UI", $"Partial load: {_core.Disassembly.Count} instructions decoded before cancel");
-            }
+                try
+                {
+                    _core.LoadFile(ofd.FileName);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error("UI", $"Error during binary load: {ex.Message}");
+                    return;
+                }
 
-            // Auto-run analysis if enabled in settings
-            if (_analysisController != null && ReverseEngineering.Core.ProjectSystem.SettingsManager.Current.Analysis.AutoAnalyzeOnLoad)
-            {
-                Logger.Info("Analysis", "Starting analysis...");
-                _ = _analysisController.RunAnalysisAsync();
-            }
+                _form.Invoke(() =>
+                {
+                    _suppressEvents = true;
+                    try
+                    {
+                        _hex.SetCoreEngine(_core);
+                        _hex.SetImageBase(_core.ImageBase);
+                        _disasmController.Load(_core);
+                        Logger.Info("UI", $"Loaded binary: {ofd.FileName}");
+                        _statusFile.Text = Path.GetFileName(ofd.FileName);
+                        if (_peInfoControl != null && _core.PEInfo != null)
+                        {
+                            _peInfoControl.LoadPEInfo(_core.PEInfo);
+                            Logger.Info("UI", $"PE: {(_core.PEInfo.Is64Bit ? "x64" : "x86")} @ 0x{_core.PEInfo.ImageBase:X}, Entry: 0x{_core.PEInfo.AddressOfEntryPoint:X}");
+                        }
+
+                        // Now trigger analysis after UI is updated
+                        if (_analysisController != null && ReverseEngineering.Core.ProjectSystem.SettingsManager.Current.Analysis.AutoAnalyzeOnLoad)
+                        {
+                            Logger.Info("Analysis", "Starting analysis...");
+                            _ = _analysisController.RunAnalysisAsync();
+                        }
+                    }
+                    finally
+                    {
+                        _suppressEvents = false;
+                    }
+                });
+            });
         }
 
         // ---------------------------------------------------------
