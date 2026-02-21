@@ -5,7 +5,7 @@ namespace ReverseEngineering.WinForms
     public class FunctionListControl : UserControl
     {
         private readonly ListView _list;
-        private List<Function> _functions = new();
+        private readonly List<Function> _functions = new();
 
         public event Action<Function>? FunctionSelected;
 
@@ -18,7 +18,8 @@ namespace ReverseEngineering.WinForms
                 Dock = DockStyle.Fill,
                 View = View.Details,
                 FullRowSelect = true,
-                HideSelection = false
+                HideSelection = false,
+                VirtualMode = true
             };
 
             _list.Columns.Add("Address", 100);
@@ -26,35 +27,88 @@ namespace ReverseEngineering.WinForms
             _list.Columns.Add("Source", 100);
             _list.Columns.Add("Size", 60);
 
+            _list.RetrieveVirtualItem += OnRetrieveVirtualItem;
             _list.SelectedIndexChanged += OnSelectedIndexChanged;
 
             Controls.Add(_list);
         }
 
-        public void LoadFunctions(List<Function> funcs)
+        // -----------------------------
+        // FULL LOAD
+        // -----------------------------
+        public void LoadFunctions(IReadOnlyList<Function> funcs)
         {
-            _functions = funcs;
-            _list.Items.Clear();
+            _functions.Clear();
+            _functions.AddRange(funcs);
+            _list.VirtualListSize = _functions.Count;
+            _list.Invalidate();
+        }
+        public void AddFunctionsBatch(List<Function> batch)
+        {
+            if (batch.Count == 0)
+                return;
 
-            foreach (var f in funcs)
+            _functions.AddRange(batch);
+
+            // Update VirtualListSize ONCE per batch
+            _list.VirtualListSize = _functions.Count;
+
+            // Optional: repaint once
+            _list.Invalidate();
+        }
+
+        // -----------------------------
+        // INCREMENTAL ADD (lazy load)
+        // -----------------------------
+        public void AddFunction(Function fn)
+        {
+            _functions.Add(fn);
+
+            // Update virtual list size
+            //_list.VirtualListSize = _functions.Count;
+
+            // Refresh only the new row
+            //_list.RedrawItems(_functions.Count - 1, _functions.Count - 1, false);
+        }
+
+        // -----------------------------
+        // VirtualMode callback
+        // -----------------------------
+        private void OnRetrieveVirtualItem(object? sender, RetrieveVirtualItemEventArgs e)
+        {
+            if (e.ItemIndex < 0 || e.ItemIndex >= _functions.Count)
             {
-                var item = new ListViewItem($"0x{f.Address:X}");
-                item.SubItems.Add(f.Name ?? $"sub_{f.Address:X}");
-                item.SubItems.Add(f.Source ?? "");
-                item.SubItems.Add(f.InstructionCount.ToString());
-                item.Tag = f;
-
-                _list.Items.Add(item);
+                e.Item = new ListViewItem("?");
+                return;
             }
+
+            var f = _functions[e.ItemIndex];
+            e.Item = BuildItem(f);
+        }
+
+        // -----------------------------
+        // Helper to build a ListViewItem
+        // -----------------------------
+        private ListViewItem BuildItem(Function f)
+        {
+            var item = new ListViewItem($"0x{f.Address:X}");
+            item.SubItems.Add(f.Name ?? $"sub_{f.Address:X}");
+            item.SubItems.Add(f.Source ?? "");
+            item.SubItems.Add(f.InstructionCount.ToString());
+            item.Tag = f;
+            return item;
         }
 
         private void OnSelectedIndexChanged(object? sender, EventArgs e)
         {
-            if (_list.SelectedItems.Count == 0)
+            if (_list.SelectedIndices.Count == 0)
                 return;
 
-            var func = (Function)_list.SelectedItems[0].Tag!;
-            FunctionSelected?.Invoke(func);
+            var index = _list.SelectedIndices[0];
+            if (index < 0 || index >= _functions.Count)
+                return;
+
+            FunctionSelected?.Invoke(_functions[index]);
         }
     }
 }

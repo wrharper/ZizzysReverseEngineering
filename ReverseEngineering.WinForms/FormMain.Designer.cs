@@ -22,7 +22,6 @@ namespace ReverseEngineering.WinForms
         private HexEditorControl hexEditor;
         private DisassemblyViewerVirtual disasmView;
         private DisassemblyControl disasmControlForAI;
-        private FunctionListControl functionListControl;
         private PatchPanel patchPanel;
         private LogControl logControl;
         private DebugLogControl debugLogControl;
@@ -45,7 +44,6 @@ namespace ReverseEngineering.WinForms
             this.hexEditor = new HexEditorControl();
             this.disasmView = new DisassemblyViewerVirtual();
             this.disasmControlForAI = new DisassemblyControl();
-            this.functionListControl = new FunctionListControl();
             this.patchPanel = new PatchPanel();
             this.logControl = new LogControl();
             this.debugLogControl = new DebugLogControl();
@@ -93,9 +91,6 @@ namespace ReverseEngineering.WinForms
 
             // DisasmView
             this.disasmView.Dock = DockStyle.Fill;
-
-            // FunctionListControl
-            this.functionListControl.Dock = DockStyle.Fill;
 
             // PatchPanel
             this.patchPanel.Dock = DockStyle.Top;

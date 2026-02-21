@@ -6,9 +6,30 @@ using ReverseEngineering.WinForms.HexEditor;
 using ReverseEngineering.WinForms.MainWindow;
 using ReverseEngineering.WinForms.StringView;
 using ReverseEngineering.WinForms.SymbolView;
+using System.Collections.Concurrent;
 
 namespace ReverseEngineering.WinForms
 {
+    public static class ControlExtensions
+    {
+        public static Task InvokeAsync(this Control control, Action action)
+        {
+            var tcs = new TaskCompletionSource<object?>();
+            control.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    action();
+                    tcs.SetResult(null);
+                }
+                catch (Exception ex)
+                {
+                    tcs.SetException(ex);
+                }
+            }));
+            return tcs.Task;
+        }
+    }
     public partial class FormMain : Form
     {
         private readonly CoreEngine _core = new();
@@ -29,6 +50,8 @@ namespace ReverseEngineering.WinForms
         private LocalLLMClient? _llmClient;
 
         public event Action<IReadOnlyList<Function>>? FunctionsUpdated;
+        private readonly ConcurrentQueue<Function> _functionQueue = new();
+        private readonly CancellationTokenSource _functionPumpCts = new();
         public FormMain()
         {
             InitializeComponent();
@@ -44,14 +67,13 @@ namespace ReverseEngineering.WinForms
             // ---------------------------------------------------------
             //  COMPOSE LAYOUT (after controls are initialized)
             // ---------------------------------------------------------
+            _functionList = new FunctionListControl();
             ComposeLayout();
-
             // ---------------------------------------------------------
             //  LLM CLIENT (Optional, for LM Studio integration)
             // ---------------------------------------------------------
             _llmClient = new LocalLLMClient();
 
-            _functionList = new FunctionListControl();
             // ---------------------------------------------------------
             //  CONTROLLERS (RichTextBox disassembly)
             // ---------------------------------------------------------
@@ -107,6 +129,8 @@ namespace ReverseEngineering.WinForms
             disasmView.InstructionSelected += DisasmView_InstructionSelected;
 
             _functionList.FunctionSelected += OnFunctionSelected;
+            _core.FunctionDiscovered += OnFunctionDiscovered;
+            FunctionsUpdated += OnFunctionsUpdated;
 
             // ---------------------------------------------------------
             //  INITIALIZE THEME
@@ -115,31 +139,51 @@ namespace ReverseEngineering.WinForms
             ThemeManager.ApplyTheme(this);  // Apply current theme
         }
 
-        private void OnAnalysisCompleted()
+        private void OnFunctionsUpdated(IReadOnlyList<Function> funcs)
         {
-            if (IsDisposed || !IsHandleCreated)
-                return;
+            _functionList.LoadFunctions(funcs);
+        }
 
-            try
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+            _ = PumpFunctionListAsync(_functionPumpCts.Token);
+        }
+        private async Task PumpFunctionListAsync(CancellationToken token)
+        {
+            const int batchSize = 200;
+
+            while (!token.IsCancellationRequested)
             {
-                BeginInvoke((Action)(() =>
+                if (_functionQueue.IsEmpty)
                 {
-                    if (IsDisposed)
-                        return;
+                    await Task.Delay(10, token);
+                    continue;
+                }
 
-                    // Update Functions tab exactly once
-                    functionListControl.LoadFunctions(_core.Functions);
+                var batch = new List<Function>(batchSize);
+                while (batch.Count < batchSize && _functionQueue.TryDequeue(out var fn))
+                    batch.Add(fn);
 
-                    // Notify any listeners (e.g., navigation, graph view)
-                    FunctionsUpdated?.Invoke(_core.Functions);
-
-                    Logger.Info("UI", $"Functions tab updated: {_core.Functions.Count} functions");
-                }));
+                await this.InvokeAsync(() =>
+                {
+                    _functionList.AddFunctionsBatch(batch);
+                });
             }
-            catch (ObjectDisposedException)
+        }
+
+        private void OnFunctionDiscovered(Function fn)
+        {
+            _functionQueue.Enqueue(fn);
+        }
+
+        private async void OnAnalysisCompleted()
+        {
+            await this.InvokeAsync(() =>
             {
-                // UI closed during invoke — safe to ignore
-            }
+                FunctionsUpdated?.Invoke(_core.Functions);
+                Logger.Info("UI", $"Functions tab updated: {_core.Functions.Count} functions");
+            });
         }
 
         // ---------------------------------------------------------
@@ -160,7 +204,7 @@ namespace ReverseEngineering.WinForms
             var leftTabs = new TabControl { Dock = DockStyle.Fill };
             hexEditor.Dock = DockStyle.Fill;
             disasmView.Dock = DockStyle.Fill;
-            functionListControl.Dock = DockStyle.Fill;
+            _functionList.Dock = DockStyle.Fill;
             debugLogControl.Dock = DockStyle.Fill;
 
             // LEFT TABS (Hex, Disasm, Functions)
@@ -173,7 +217,7 @@ namespace ReverseEngineering.WinForms
             leftTabs.TabPages.Add(disasmPage);
 
             var functionsPage = new TabPage("Functions");
-            functionsPage.Controls.Add(functionListControl);
+            functionsPage.Controls.Add(_functionList);
             leftTabs.TabPages.Add(functionsPage);
 
             var debugPage = new TabPage("Debug Log");
@@ -443,15 +487,16 @@ namespace ReverseEngineering.WinForms
             if (_core == null)
                 return;
 
-            // Extract instructions for this function
+            // 1. Extract instructions for this function
             var ins = FunctionFinder.GetFunctionInstructions(
                 _core.Disassembly,
                 func.Address
             );
 
+            // 2. Populate the disassembly view
             disasmView.SetInstructions(ins);
 
-            // Lazy CFG build (optional)
+            // 3. Lazy-build the CFG (only when needed)
             if (func.CFG == null)
                 func.CFG = BasicBlockBuilder.BuildCFG(_core.Disassembly, func.Address);
         }

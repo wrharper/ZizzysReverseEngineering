@@ -37,6 +37,8 @@ namespace ReverseEngineering.Core
         // ---------------------------------------------------------
         public ControlFlowGraph? CFG { get; private set; }
         public List<Function> Functions { get; private set; } = [];
+
+        public event Action<Function>? FunctionDiscovered;
         public Dictionary<ulong, List<CrossReference>> CrossReferences { get; private set; } = [];
         public Dictionary<ulong, Symbol> Symbols { get; private set; } = [];
         public List<PatternMatch> Strings { get; private set; } = [];
@@ -458,6 +460,12 @@ namespace ReverseEngineering.Core
                 Logger.Info("Analysis", "Step 1/6: Finding functions...");
                 Functions = FunctionFinder.FindFunctions(Disassembly, this);
                 Logger.Info("Analysis", $"✓ Found {Functions.Count} functions ({sw.ElapsedMilliseconds}ms)");
+
+                // NEW: Notify UI incrementally
+                foreach (var fn in Functions)
+                {
+                    FunctionDiscovered?.Invoke(fn);
+                }
 
                 // Step 2: CFG skipped (lazy on-demand)
                 Logger.Info("Analysis", "Step 2/6: Skipping CFG (lazy on-demand)");
