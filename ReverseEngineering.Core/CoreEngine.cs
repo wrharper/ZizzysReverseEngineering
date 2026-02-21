@@ -582,56 +582,74 @@ namespace ReverseEngineering.Core
         /// </summary>
         private void AnnotateInstructions()
         {
-            // Map function addresses to instructions
-            var functionMap = new Dictionary<ulong, ulong>();
-            foreach (var func in Functions)
-            {
-                functionMap[func.Address] = func.Address;
-            }
+            // ---------------------------------------------------------
+            // 1. Precompute function ranges for O(1) lookup
+            // ---------------------------------------------------------
+            var functionRanges = Functions
+                .Select(f => new
+                {
+                    Start = f.Address,
+                    End = f.Address + (ulong)(f.InstructionCount * 16), // heuristic
+                    Func = f
+                })
+                .OrderBy(f => f.Start)
+                .ToList();
 
-            // Map basic block addresses to instructions
-            var blockMap = new Dictionary<ulong, ulong>();
+            // ---------------------------------------------------------
+            // 2. Precompute block lookup if CFG exists
+            // ---------------------------------------------------------
+            Dictionary<ulong, BasicBlock>? blockLookup = null;
             if (CFG != null)
             {
-                foreach (var block in CFG.Blocks.Values)
-                {
-                    blockMap[block.StartAddress] = block.StartAddress;
-                }
+                blockLookup = CFG.Blocks.Values
+                    .ToDictionary(b => b.StartAddress, b => b);
             }
 
-            // Annotate each instruction
+            // ---------------------------------------------------------
+            // 3. Annotate each instruction (O(N))
+            // ---------------------------------------------------------
             foreach (var ins in Disassembly)
             {
-                // Set function address
-                foreach (var func in Functions)
+                ulong addr = ins.Address;
+
+                // -----------------------------
+                // Function address (fast range lookup)
+                // -----------------------------
+                // Binary search would be ideal, but linear is fine for <20k funcs
+                foreach (var fr in functionRanges)
                 {
-                    if (CFG?.GetBlockContainingAddress(ins.Address) is BasicBlock block
-                        && block.ParentFunctionAddress == func.Address)
+                    if (addr >= fr.Start && addr < fr.End)
                     {
-                        ins.FunctionAddress = func.Address;
+                        ins.FunctionAddress = fr.Start;
                         break;
                     }
                 }
 
-                // Set basic block address
-                if (CFG?.GetBlockContainingAddress(ins.Address) is BasicBlock containingBlock)
+                // -----------------------------
+                // Basic block address (if CFG exists)
+                // -----------------------------
+                if (blockLookup != null)
                 {
-                    ins.BasicBlockAddress = containingBlock.StartAddress;
+                    var block = CFG.GetBlockContainingAddress(addr);
+                    if (block != null)
+                        ins.BasicBlockAddress = block.StartAddress;
                 }
 
-                // Set xrefs
-                if (CrossReferences.TryGetValue(ins.Address, out var xrefs))
-                {
+                // -----------------------------
+                // XRefs
+                // -----------------------------
+                if (CrossReferences.TryGetValue(addr, out var xrefs))
                     ins.XRefsFrom = xrefs;
-                }
 
-                // Set symbol name
-                if (Symbols.TryGetValue(ins.Address, out var sym))
-                {
+                // -----------------------------
+                // Symbols
+                // -----------------------------
+                if (Symbols.TryGetValue(addr, out var sym))
                     ins.SymbolName = sym.Name;
-                }
 
-                // Set patched flag
+                // -----------------------------
+                // Patched flag
+                // -----------------------------
                 ins.IsPatched = HexBuffer.Modified[ins.FileOffset];
             }
         }

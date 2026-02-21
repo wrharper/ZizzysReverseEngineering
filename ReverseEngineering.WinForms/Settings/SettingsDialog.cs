@@ -86,7 +86,6 @@ namespace ReverseEngineering.WinForms.Settings
 
             _tabControl.TabPages.Add(CreateLMStudioTab());
             _tabControl.TabPages.Add(CreateUITab());
-            _tabControl.TabPages.Add(CreateAdvancedTab());
 
             // Set initial tab if requested
             if (_initialTabIndex >= 0 && _initialTabIndex < _tabControl.TabPages.Count)
@@ -171,10 +170,6 @@ namespace ReverseEngineering.WinForms.Settings
             };
             panel.Controls.Add(infoLabel);
             y += 50;
-
-            // Enabled checkbox
-            _lmEnabledCheckBox = AddCheckBox(panel, "Enable LLM Analysis", 10, ref y);
-            y += 10;
 
             // Host
             AddLabel(panel, "Host:", 10, y);
@@ -279,66 +274,6 @@ namespace ReverseEngineering.WinForms.Settings
         }
 
         // ---------------------------------------------------------
-        //  ADVANCED TAB
-        // ---------------------------------------------------------
-        private TabPage CreateAdvancedTab()
-        {
-            var tab = new TabPage { Text = "Advanced", BackColor = ThemeManager.CurrentTheme.BackColor, ForeColor = ThemeManager.CurrentTheme.ForeColor };
-            var panel = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(15) };
-            tab.Controls.Add(panel);
-
-            int y = 10;
-
-            _detailedLoggingCheckBox = AddCheckBox(panel, "Enable detailed logging", 10, ref y, _settings.EnableDetailedLogging);
-
-            AddLabel(panel, "Log retention (days):", 10, y);
-            _logRetentionNumeric = new NumericUpDown 
-            { 
-                Minimum = 1,
-                Maximum = 365,
-                Value = Math.Clamp(_settings.LogRetentionDays, 1, 365),
-                Width = 80, 
-                Location = new Point(150, y), 
-                BackColor = ThemeManager.CurrentTheme.PanelColor, 
-                ForeColor = ThemeManager.CurrentTheme.ForeColor 
-            };
-            panel.Controls.Add(_logRetentionNumeric);
-
-            return tab;
-        }
-
-        // ---------------------------------------------------------
-        //  RESPONSIVE LAYOUT HELPERS
-        // ---------------------------------------------------------
-        /// <summary>
-        /// Adds a label-control pair with responsive layout.
-        /// Labels are anchored left, controls are anchored left+right for responsiveness.
-        /// </summary>
-        private int AddLabeledControl(Panel panel, string labelText, Control control, int y, int controlWidth = 150)
-        {
-            const int labelX = 10;
-            const int controlX = 150;
-            const int rowHeight = 30;
-
-            var label = new Label 
-            { 
-                Text = labelText, 
-                Location = new Point(labelX, y + 2), 
-                AutoSize = true, 
-                ForeColor = ThemeManager.CurrentTheme.ForeColor,
-                Anchor = AnchorStyles.Left | AnchorStyles.Top
-            };
-            panel.Controls.Add(label);
-
-            control.Location = new Point(controlX, y);
-            control.Width = controlWidth;
-            control.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right;
-            panel.Controls.Add(control);
-
-            return y + rowHeight;
-        }
-
-        // ---------------------------------------------------------
         //  HELPERS
         // ---------------------------------------------------------
         private Label AddLabel(Panel panel, string text, int x, int y)
@@ -358,7 +293,11 @@ namespace ReverseEngineering.WinForms.Settings
 
         private void LoadSettings()
         {
+            if (_lmEnabledCheckBox == null)
+                _lmEnabledCheckBox = new(); // Controls not initialized yet
             _lmEnabledCheckBox.Checked = _settings.LMStudio.EnableLLMAnalysis;
+            if (_lmHostTextBox == null)
+                _lmHostTextBox = new(); // Controls not initialized yet
             _lmHostTextBox.Text = _settings.LMStudio.Host;
             _lmPortNumeric.Value = _settings.LMStudio.Port;
         }
@@ -454,4 +393,3 @@ namespace ReverseEngineering.WinForms.Settings
         }
     }
 }
-

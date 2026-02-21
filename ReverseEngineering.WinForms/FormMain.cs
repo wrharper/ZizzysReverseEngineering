@@ -17,7 +17,6 @@ namespace ReverseEngineering.WinForms
         private System.Windows.Forms.Timer? _tokenUpdateTimer;  // Timer for periodic token stat updates
 
         private readonly MainMenuController _menuController;
-        private readonly ThemeMenuController _themeController;
         private readonly FunctionListControl _functionList;
         private readonly HexEditorController _hexController;
         private readonly DisassemblyController _disasmController;
@@ -29,6 +28,7 @@ namespace ReverseEngineering.WinForms
         // LLM Client (kept as field for initialization in Load)
         private LocalLLMClient? _llmClient;
 
+        public event Action<IReadOnlyList<Function>>? FunctionsUpdated;
         public FormMain()
         {
             InitializeComponent();
@@ -89,11 +89,6 @@ namespace ReverseEngineering.WinForms
                 debugLogControl
             );
 
-            _themeController = new ThemeMenuController(
-                this,
-                menuStrip1
-            );
-
             _hexController = new HexEditorController(
                 hexEditor,
                 statusOffset,
@@ -105,17 +100,46 @@ namespace ReverseEngineering.WinForms
             // ---------------------------------------------------------
             //  EVENT WIRING
             // ---------------------------------------------------------
-            _functionList.FunctionSelected += OnFunctionSelected;
+            _analysisController.AnalysisCompleted += OnAnalysisCompleted;
             hexEditor.BytesChanged += HexEditor_BytesChanged;
             hexEditor.SelectionChanged += HexEditor_SelectionChanged;
 
             disasmView.InstructionSelected += DisasmView_InstructionSelected;
+
+            _functionList.FunctionSelected += OnFunctionSelected;
 
             // ---------------------------------------------------------
             //  INITIALIZE THEME
             // ---------------------------------------------------------
             ThemeManager.Initialize();  // Load theme from settings
             ThemeManager.ApplyTheme(this);  // Apply current theme
+        }
+
+        private void OnAnalysisCompleted()
+        {
+            if (IsDisposed || !IsHandleCreated)
+                return;
+
+            try
+            {
+                BeginInvoke((Action)(() =>
+                {
+                    if (IsDisposed)
+                        return;
+
+                    // Update Functions tab exactly once
+                    functionListControl.LoadFunctions(_core.Functions);
+
+                    // Notify any listeners (e.g., navigation, graph view)
+                    FunctionsUpdated?.Invoke(_core.Functions);
+
+                    Logger.Info("UI", $"Functions tab updated: {_core.Functions.Count} functions");
+                }));
+            }
+            catch (ObjectDisposedException)
+            {
+                // UI closed during invoke — safe to ignore
+            }
         }
 
         // ---------------------------------------------------------

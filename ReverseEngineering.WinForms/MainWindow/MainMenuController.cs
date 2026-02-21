@@ -482,6 +482,7 @@ namespace ReverseEngineering.WinForms.MainWindow
             }
 
             Logger.Info("UI", "Starting disassembly...");
+
             Task.Run(() =>
             {
                 try
@@ -494,34 +495,53 @@ namespace ReverseEngineering.WinForms.MainWindow
                     return;
                 }
 
-                _form.Invoke(() =>
-                {
-                    _suppressEvents = true;
-                    try
-                    {
-                        _hex.SetCoreEngine(_core);
-                        _hex.SetImageBase(_core.ImageBase);
-                        _disasmController.Load(_core);
-                        Logger.Info("UI", $"Loaded binary: {ofd.FileName}");
-                        _statusFile.Text = Path.GetFileName(ofd.FileName);
-                        if (_peInfoControl != null && _core.PEInfo != null)
-                        {
-                            _peInfoControl.LoadPEInfo(_core.PEInfo);
-                            Logger.Info("UI", $"PE: {(_core.PEInfo.Is64Bit ? "x64" : "x86")} @ 0x{_core.PEInfo.ImageBase:X}, Entry: 0x{_core.PEInfo.AddressOfEntryPoint:X}");
-                        }
+                // UI may have closed while loading
+                if (_form == null || _form.IsDisposed || !_form.IsHandleCreated)
+                    return;
 
-                        // Now trigger analysis after UI is updated
-                        if (_analysisController != null && ReverseEngineering.Core.ProjectSystem.SettingsManager.Current.Analysis.AutoAnalyzeOnLoad)
-                        {
-                            Logger.Info("Analysis", "Starting analysis...");
-                            _ = _analysisController.RunAnalysisAsync();
-                        }
-                    }
-                    finally
+                try
+                {
+                    _form.BeginInvoke((Action)(() =>
                     {
-                        _suppressEvents = false;
-                    }
-                });
+                        if (_form.IsDisposed)
+                            return;
+
+                        _suppressEvents = true;
+                        try
+                        {
+                            _hex.SetCoreEngine(_core);
+                            _hex.SetImageBase(_core.ImageBase);
+                            _disasmController.Load(_core);
+
+                            Logger.Info("UI", $"Loaded binary: {ofd.FileName}");
+                            _statusFile.Text = Path.GetFileName(ofd.FileName);
+
+                            if (_peInfoControl != null && _core.PEInfo != null)
+                            {
+                                _peInfoControl.LoadPEInfo(_core.PEInfo);
+                                Logger.Info("UI",
+                                    $"PE: {(_core.PEInfo.Is64Bit ? "x64" : "x86")} @ 0x{_core.PEInfo.ImageBase:X}, " +
+                                    $"Entry: 0x{_core.PEInfo.AddressOfEntryPoint:X}");
+                            }
+
+                            if (_analysisController != null &&
+                                SettingsManager.Current.Analysis.AutoAnalyzeOnLoad)
+                            {
+                                // 🔥 This ALWAYS fires when analysis actually begins
+                                Logger.Info("Analysis", "Starting analysis...");
+                                _ = _analysisController.RunAnalysisAsync();
+                            }
+                        }
+                        finally
+                        {
+                            _suppressEvents = false;
+                        }
+                    }));
+                }
+                catch (ObjectDisposedException)
+                {
+                    // UI died between the guard and BeginInvoke — safe to ignore
+                }
             });
         }
 
